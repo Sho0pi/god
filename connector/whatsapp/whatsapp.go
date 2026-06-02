@@ -38,11 +38,11 @@ const (
 
 type Connector struct {
 	storePath string
-	// cfgMu protects allow and groupTrigger — reloaded on config change.
-	cfgMu        sync.RWMutex
-	allow        []string // normalised digits; empty = allow all
-	groupTrigger config.GroupTriggerConfig
-	handler      func(ctx context.Context, msg connector.Message)
+	configFn  func() *config.Config // always returns latest config
+	// allowSource, when set, returns extra allow-list entries from the store
+	// (managed at runtime via the /allow admin command). Merged with yaml.
+	allowSource func() []string
+	handler     func(ctx context.Context, msg connector.Message)
 	client       *whatsmeow.Client
 	container    *sqlstore.Container
 	mu           sync.Mutex
@@ -54,14 +54,16 @@ type Connector struct {
 	wg           sync.WaitGroup
 }
 
-func New(storePath string, allow []string, groupTrigger config.GroupTriggerConfig) *Connector {
-	norm := normalizeAllow(allow)
+// New creates a WhatsApp connector. configFn is called on each message to get
+// the latest config — changes to god.yaml take effect immediately.
+func New(storePath string, configFn func() *config.Config) *Connector {
+	norm := normalizeAllow(configFn().Connectors.WhatsApp.Allow)
 	if len(norm) == 0 {
 		log.Println("whatsapp: allow list empty — accepting all senders")
 	} else {
 		log.Printf("whatsapp: allow list: %v", norm)
 	}
-	return &Connector{storePath: storePath, allow: norm, groupTrigger: groupTrigger}
+	return &Connector{storePath: storePath, configFn: configFn}
 }
 
 func normalizeAllow(allow []string) []string {
@@ -74,31 +76,53 @@ func normalizeAllow(allow []string) []string {
 	return norm
 }
 
-// Reload updates the allow list and group trigger without restarting.
-func (c *Connector) Reload(allow []string, gt config.GroupTriggerConfig) {
-	norm := normalizeAllow(allow)
-	c.cfgMu.Lock()
-	c.allow = norm
-	c.groupTrigger = gt
-	c.cfgMu.Unlock()
-	log.Printf("whatsapp: config reloaded — allow=%v mentionOnly=%v prefixes=%v",
-		norm, gt.MentionOnly, gt.Prefixes)
+// SetAllowSource registers a function returning runtime allow-list entries
+// (e.g. store-backed numbers added via /allow). Entries are merged with the
+// yaml allow list. Call before Start.
+func (c *Connector) SetAllowSource(fn func() []string) {
+	c.allowSource = fn
 }
 
 func (c *Connector) isAllowed(senderUser string) bool {
-	c.cfgMu.RLock()
-	allow := c.allow
-	c.cfgMu.RUnlock()
+	allow := normalizeAllow(c.configFn().Connectors.WhatsApp.Allow)
+	if c.allowSource != nil {
+		allow = append(allow, normalizeAllow(c.allowSource())...)
+	}
 	if len(allow) == 0 {
 		return true
 	}
 	normalized := digitsOnly(senderUser)
 	for _, a := range allow {
-		if a == normalized {
+		if phoneMatch(a, normalized) {
 			return true
 		}
 	}
 	return false
+}
+
+// phoneMatch compares two digit-only phone numbers tolerantly. WhatsApp reports
+// senders in full international form (e.g. 972501234567) while allow-list entries
+// are often written in local form (0501234567), where the leading 0 is a trunk
+// prefix that the country code replaces. Strip leading zeros from both, then treat
+// them as equal when one is a suffix of the other, requiring >=7 shared trailing
+// digits to avoid false matches between unrelated numbers.
+func phoneMatch(a, b string) bool {
+	a = strings.TrimLeft(a, "0")
+	b = strings.TrimLeft(b, "0")
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	short, long := a, b
+	if len(short) > len(long) {
+		short, long = long, short
+	}
+	if len(short) < 7 {
+		return false
+	}
+	return strings.HasSuffix(long, short)
 }
 
 // senderPhone returns the phone number of the sender.
@@ -274,6 +298,11 @@ func (c *Connector) Send(ctx context.Context, chatID, text string) error {
 		return fmt.Errorf("invalid jid %q: %w", chatID, err)
 	}
 
+	// Clear the typing indicator before the reply lands.
+	if err := client.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
+		log.Printf("whatsapp: clear typing: %v", err)
+	}
+
 	_, err = client.SendMessage(ctx, to, &waE2E.Message{
 		Conversation: proto.String(text),
 	})
@@ -284,6 +313,17 @@ func (c *Connector) eventHandler(evt any) {
 	switch v := evt.(type) {
 	case *events.Message:
 		c.handleIncoming(v)
+	case *events.Connected:
+		// Announce presence so the server has our pushname and typing
+		// indicators we send later are actually delivered to peers.
+		c.mu.Lock()
+		client := c.client
+		c.mu.Unlock()
+		if client != nil {
+			if err := client.SendPresence(c.runCtx, types.PresenceAvailable); err != nil {
+				log.Printf("whatsapp: send presence: %v", err)
+			}
+		}
 	case *events.Disconnected:
 		c.reconnMu.Lock()
 		if c.reconnecting || c.stopping.Load() {
@@ -382,7 +422,27 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 	}
 
 	log.Printf("whatsapp: msg from %s: %q", msg.SenderID, truncate(text, 60))
+	c.acknowledge(evt) // blue ticks + typing indicator while god thinks
 	go c.handler(c.runCtx, msg)
+}
+
+// acknowledge marks the incoming message as read and shows a typing indicator
+// so the sender sees that god received the message and is working on a reply.
+// Best-effort: failures are logged but never block message handling.
+func (c *Connector) acknowledge(evt *events.Message) {
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+	if client == nil {
+		return
+	}
+	info := evt.Info
+	if err := client.MarkRead(c.runCtx, []types.MessageID{info.ID}, time.Now(), info.Chat, info.Sender); err != nil {
+		log.Printf("whatsapp: mark read: %v", err)
+	}
+	if err := client.SendChatPresence(c.runCtx, info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
+		log.Printf("whatsapp: typing presence: %v", err)
+	}
 }
 
 func extractText(msg *waE2E.Message) string {
@@ -486,9 +546,7 @@ func (c *Connector) isMentionedInGroup(msg *waE2E.Message, client *whatsmeow.Cli
 
 // shouldRespondInGroup applies group_trigger config — mirrors picoclaw's ShouldRespondInGroup.
 func (c *Connector) shouldRespondInGroup(isMentioned bool, content string) (bool, string) {
-	c.cfgMu.RLock()
-	gt := c.groupTrigger
-	c.cfgMu.RUnlock()
+	gt := c.configFn().Connectors.WhatsApp.GroupTrigger
 
 	if isMentioned {
 		return true, content

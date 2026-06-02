@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sho0pi/god/config"
 	"github.com/sho0pi/god/connector/whatsapp"
 )
 
@@ -29,13 +28,8 @@ var whatsappCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		waConnector := whatsapp.New(storePath, cfg.Connectors.WhatsApp.Allow, cfg.Connectors.WhatsApp.GroupTrigger)
-
-		loader.Watch(func(newCfg *config.Config) {
-			waConnector.Reload(newCfg.Connectors.WhatsApp.Allow, newCfg.Connectors.WhatsApp.GroupTrigger)
-		})
-
-		runAgent(ctx, waConnector)
+		conn := whatsapp.New(storePath, loader.Supplier())
+		runAgent(ctx, conn)
 		return nil
 	},
 }

@@ -6,12 +6,15 @@ llm:
 #   url: "postgres://user:pass@localhost:5432/god"
 
 memory:
-  top_k: 5  # how many memories to inject per turn
+  top_k: 5           # how many long-term memories to inject per turn
+  max_turns: 40      # short-term sliding window size (0 = unlimited)
+  inactivity_timeout: 30m  # extract memories after this silence (0 = disabled)
 
 connectors:
   whatsapp:
     enabled: true
     store_path: data/whatsapp
+    default_soul: human  # soul assigned to new WhatsApp users
 
     # Phone number whitelist. Leave empty to allow everyone.
     allow: []
@@ -28,8 +31,107 @@ connectors:
 
   cli:
     enabled: true
+    default_soul: human
 
 tools:
   places:
     # Requires GOOGLE_PLACES_API_KEY env var.
     enabled: true
+
+  # LLM-callable shell, OpenClaw-style — but every command runs inside a
+  # throwaway, locked-down Docker container (no host filesystem, no network by
+  # default, read-only root, dropped caps, memory/CPU/pid/time limits). Files do
+  # NOT persist between calls. Disabled by default; requires Docker.
+  #
+  # SECURITY: this is a shell the model can drive. Untrusted input (web_search
+  # results, message text) flows into the model, so a prompt-injection can call
+  # it. The container is the boundary. Only grant `exec` to trusted roles below
+  # (see roles.<role>.tools) — never to `guest`.
+  exec:
+    enabled: false
+    image: alpine:3.20   # must be pulled: docker pull alpine:3.20
+    timeout: 30s         # wall-clock cap per command
+    memory: 256m
+    cpus: "0.5"
+    pids_limit: 128
+    network: false       # true → container gets network (raises risk)
+
+  # Lets god edit THIS config file (god.yaml) and nothing else — validated,
+  # backed up to god.yaml.bak, hot-reloaded live. Cannot touch source code.
+  # SECURITY: admin-only. A prompt-injection in an admin session could try to
+  # rewrite the admin/allow lists; .bak is the revert path.
+  config:
+    enabled: false
+
+  # Tools listed here are gated behind admin approval: god parks the call, shows
+  # a preview, and waits for /approve <id> or /deny <id> (auto-expires in 10m).
+  # This is the rail that stops a prompt-injection from silently running exec or
+  # rewriting config. Strongly recommended whenever exec/config are enabled.
+  approval: [config, exec]
+
+# Soul definitions — each soul is a named personality.
+# Assign souls per-connector (default_soul) or per-user via /soul set <name>.
+souls:
+  default:
+    prompt: "You are a helpful assistant."
+
+  human:
+    prompt: |
+      You are a real person in a chat conversation. Write exactly like a human — casual, direct, natural.
+
+      Voice rules (non-negotiable):
+      - Never use em dashes (—) or en dashes (–). Use commas or periods instead.
+      - Never use: "crucial", "delve", "landscape", "testament", "vibrant", "nestled", "pivotal", "transformative", "comprehensive", "notably", "certainly", "absolutely", "of course", "straightforward", "nuanced", "utilize"
+      - Never start with "Great question", "Certainly!", "Of course!", "Happy to help", "I hope this helps", "Sure!"
+      - Use contractions: "it's", "you're", "don't", "I'm", "can't", "won't"
+      - Vary sentence length. Short is fine. Very short is fine.
+      - No bullet points for conversational replies. Just talk.
+      - No bold text or markdown formatting in chat replies.
+      - No emojis unless the moment genuinely calls for it.
+
+      Writing style:
+      - Specific beats vague. "last Tuesday" not "recently". "$200" not "quite expensive".
+      - Say what you mean and stop. Don't over-explain.
+      - You can express doubt, change your mind, admit you don't know.
+      - Genuine asides and random thoughts are good.
+      - If something's funny, be funny. Don't force it.
+      - Match the energy of the person you're talking to.
+
+  caveman:
+    prompt: |
+      Speak like caveman. Full intensity. All technical substance stay. Only fluff die.
+
+      Hard rules:
+      - Drop articles: no "a", "an", "the"
+      - Drop filler: no "just", "really", "basically", "actually", "simply", "very", "quite"
+      - Drop pleasantries: no "sure", "certainly", "of course", "happy to", "great question", "I hope this helps"
+      - Drop hedging: no "I think", "it seems", "perhaps", "maybe", "might want to consider"
+      - Fragments OK. Full sentences not required.
+      - Short synonyms: "big" not "extensive", "fix" not "implement a solution for", "use" not "utilize", "show" not "demonstrate"
+      - Technical terms stay exact. Code blocks unchanged.
+
+      Pattern: [thing] [action] [reason]. [next step].
+
+      Bad: "Sure! I'd be happy to help you with that. The issue you're experiencing is likely caused by..."
+      Good: "Bug in auth middleware. Token expiry check use < not <=. Fix:"
+
+      Auto-clarity exception: security warnings, irreversible actions, multi-step sequences where order matters — normal speech for those, then resume caveman.
+
+# Bootstrap admins (phone numbers / user IDs). These get the admin role before
+# any role is assigned in the store.
+# admin:
+#   - "972501234567"
+
+# Roles control which LLM and which tools each user gets.
+# IMPORTANT: an empty `tools: []` means ALL tools. To restrict, list them
+# explicitly. The `exec` shell tool must only appear under trusted roles.
+roles:
+  admin:
+    llm: { provider: gemini, model: gemini-3.1-flash-lite }
+    tools: [calculator, web_search, remember, set_soul, search_places, exec, config]
+  user:
+    llm: { provider: gemini, model: gemini-3.1-flash-lite }
+    tools: [calculator, web_search, remember, set_soul, search_places]
+  guest:
+    llm: { provider: gemini, model: gemini-3.1-flash-lite }
+    tools: [calculator, web_search]

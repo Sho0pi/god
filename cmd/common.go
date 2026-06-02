@@ -4,17 +4,25 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/sho0pi/god/agent"
+	"github.com/sho0pi/god/config"
 	"github.com/sho0pi/god/connector"
 	"github.com/sho0pi/god/embed"
 	embedgemini "github.com/sho0pi/god/embed/gemini"
-	"github.com/sho0pi/god/llm/gemini"
+	"github.com/sho0pi/god/llm"
+	llmgemini "github.com/sho0pi/god/llm/gemini"
 	"github.com/sho0pi/god/store"
 	"github.com/sho0pi/god/store/postgres"
 	"github.com/sho0pi/god/tool"
+	"github.com/sho0pi/god/tool/calculator"
+	"github.com/sho0pi/god/tool/cfgtool"
+	toolexec "github.com/sho0pi/god/tool/exec"
 	"github.com/sho0pi/god/tool/memory"
 	toolplaces "github.com/sho0pi/god/tool/places"
+	toolsoul "github.com/sho0pi/god/tool/soul"
+	"github.com/sho0pi/god/tool/websearch"
 )
 
 func buildStore(ctx context.Context) store.Store {
@@ -38,19 +46,90 @@ func buildEmbedder(ctx context.Context, apiKey string) embed.Embedder {
 	e, err := embedgemini.New(ctx, apiKey)
 	if err != nil {
 		log.Printf("embedder init failed: %v", err)
-		return nil // explicit nil interface — safe for agent nil-check
+		return nil
 	}
 	log.Println("embedder: text-embedding-004 ready")
 	return e
 }
 
+func buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *llm.Pool {
+	factory := func(ctx context.Context, pcfg llm.ProviderConfig) (llm.LLM, error) {
+		switch pcfg.Provider {
+		case "gemini", "google":
+			key := os.Getenv("GEMINI_API_KEY")
+			if key == "" {
+				key = geminiKey
+			}
+			return llmgemini.New(ctx, key, pcfg.Model)
+		default:
+			return nil, llm.ErrUnsupportedProvider(pcfg.Provider)
+		}
+	}
+	pool := llm.NewPool(factory, def)
+	// Pre-warm role LLMs at startup.
+	for name, role := range cfg.Roles {
+		if role.LLM.Provider == "" || role.LLM.Model == "" {
+			continue
+		}
+		if l := pool.Get(ctx, llm.ProviderConfig{Provider: role.LLM.Provider, Model: role.LLM.Model}); l == nil {
+			log.Printf("llm pool: failed to init role %q LLM", name)
+		} else {
+			log.Printf("llm pool: role %q → %s/%s", name, role.LLM.Provider, role.LLM.Model)
+		}
+	}
+	return pool
+}
+
 func buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
 	r := tool.NewRegistry()
+
+	r.Register(calculator.New())
+	log.Println("tool: calculator enabled")
+
+	r.Register(websearch.New())
+	log.Println("tool: web_search enabled")
+
+	if s != nil {
+		knownSouls := make([]string, 0, len(cfg.Souls))
+		for name := range cfg.Souls {
+			if name != "god" {
+				knownSouls = append(knownSouls, name)
+			}
+		}
+		r.Register(toolsoul.NewSetSoulTool(s, knownSouls))
+		log.Println("tool: set_soul enabled")
+	}
 
 	if cfg.Tools.Places.Enabled {
 		if key := os.Getenv("GOOGLE_PLACES_API_KEY"); key != "" {
 			r.Register(toolplaces.NewSearchTool(key))
 			log.Println("tool: search_places enabled")
+		}
+	}
+
+	if cfg.Tools.Config.Enabled {
+		path := cfgFile
+		if path == "" {
+			path = config.DefaultPath
+		}
+		r.Register(cfgtool.New(path))
+		log.Println("tool: config enabled (god edits god.yaml — grant to admin role only)")
+	}
+
+	if cfg.Tools.Exec.Enabled {
+		t, err := toolexec.New(toolexec.Config{
+			Image:     cfg.Tools.Exec.Image,
+			Timeout:   cfg.Tools.Exec.Timeout,
+			Memory:    cfg.Tools.Exec.Memory,
+			CPUs:      cfg.Tools.Exec.CPUs,
+			PidsLimit: cfg.Tools.Exec.PidsLimit,
+			Network:   cfg.Tools.Exec.Network,
+		})
+		if err != nil {
+			log.Printf("tool: exec disabled: %v", err)
+		} else {
+			r.Register(t)
+			log.Println("tool: exec enabled (sandboxed docker — grant to trusted roles only)")
 		}
 	}
 
@@ -63,8 +142,8 @@ func buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
 }
 
 func runAgent(ctx context.Context, c connector.Connector) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
+	geminiKey := os.Getenv("GEMINI_API_KEY")
+	if geminiKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
 
@@ -76,20 +155,34 @@ func runAgent(ctx context.Context, c connector.Connector) {
 		model = "gemini-3.1-flash-lite"
 	}
 
-	llmClient, err := gemini.New(ctx, apiKey, model)
+	defaultLLM, err := llmgemini.New(ctx, geminiKey, model)
 	if err != nil {
 		log.Fatalf("gemini init: %v", err)
 	}
-	defer llmClient.Close()
+	defer defaultLLM.Close()
 
 	s := buildStore(ctx)
 	if s != nil {
 		defer s.Close()
+		// If the connector supports a runtime allow source, feed it store-backed
+		// allow-list entries (managed via the /allow admin command).
+		if as, ok := c.(interface{ SetAllowSource(func() []string) }); ok {
+			as.SetAllowSource(func() []string {
+				qctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				nums, err := s.ListAllow(qctx, "whatsapp")
+				if err != nil {
+					log.Printf("allow source: %v", err)
+					return nil
+				}
+				return nums
+			})
+		}
 	}
 
 	var e embed.Embedder
 	if s != nil {
-		e = buildEmbedder(ctx, apiKey)
+		e = buildEmbedder(ctx, geminiKey)
 	}
 
 	topK := cfg.Memory.TopK
@@ -97,7 +190,16 @@ func runAgent(ctx context.Context, c connector.Connector) {
 		topK = 5
 	}
 
-	a := agent.New(c, llmClient, buildRegistry(s, e), e, s, topK)
+	pool := buildLLMPool(ctx, geminiKey, defaultLLM)
+	supply := loader.Supplier()
+	loader.Watch(nil) // keeps loader's internal cfg updated; supplier reads it
+
+	a := agent.New(c, defaultLLM, buildRegistry(s, e), e, s, agent.Options{
+		MaxTurns:          cfg.Memory.MaxTurns,
+		InactivityTimeout: cfg.Memory.InactivityTimeout,
+		ConfigFn:          supply,
+		LLMPool:           pool,
+	})
 	if err := a.Run(ctx); err != nil {
 		log.Printf("agent stopped: %v", err)
 	}

@@ -40,11 +40,17 @@ func (m *mockStore) SaveMemory(_ context.Context, connector, userID, fact string
 func (m *mockStore) SearchMemories(_ context.Context, _, _ string, _ []float32, _ int) ([]string, error) {
 	return nil, nil
 }
-func (m *mockStore) AssignSoul(_ context.Context, _, _, _ string) error { return nil }
-func (m *mockStore) GetSoul(_ context.Context, _, _ string) (string, error) {
-	return "", nil
-}
-func (m *mockStore) Close() error { return nil }
+func (m *mockStore) AssignSoul(_ context.Context, _, _, _ string) error     { return nil }
+func (m *mockStore) GetSoul(_ context.Context, _, _ string) (string, error)  { return "", nil }
+func (m *mockStore) DeleteSoul(_ context.Context, _, _ string) error         { return nil }
+func (m *mockStore) AssignRole(_ context.Context, _, _, _ string) error      { return nil }
+func (m *mockStore) GetRole(_ context.Context, _, _ string) (string, error)  { return "", nil }
+func (m *mockStore) DeleteRole(_ context.Context, _, _ string) error         { return nil }
+func (m *mockStore) DeleteMemories(_ context.Context, _, _ string) error     { return nil }
+func (m *mockStore) AddAllow(_ context.Context, _, _ string) error           { return nil }
+func (m *mockStore) RemoveAllow(_ context.Context, _, _ string) error        { return nil }
+func (m *mockStore) ListAllow(_ context.Context, _ string) ([]string, error) { return nil, nil }
+func (m *mockStore) Close() error                                            { return nil }
 
 // --- helpers ---
 

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -77,10 +78,99 @@ func (s *Store) GetSoul(ctx context.Context, connector, userID string) (string, 
 		`SELECT soul_name FROM soul_assignments WHERE connector=$1 AND user_id=$2`,
 		connector, userID,
 	).Scan(&name)
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
+	if err != nil {
+		return "", fmt.Errorf("get soul: %w", err)
+	}
 	return name, nil
+}
+
+func (s *Store) AssignRole(ctx context.Context, connector, userID, roleName string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO role_assignments (connector, user_id, role_name, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (connector, user_id)
+		DO UPDATE SET role_name = EXCLUDED.role_name, updated_at = NOW()
+	`, connector, userID, roleName)
+	return err
+}
+
+func (s *Store) GetRole(ctx context.Context, connector, userID string) (string, error) {
+	var name string
+	err := s.pool.QueryRow(ctx,
+		`SELECT role_name FROM role_assignments WHERE connector=$1 AND user_id=$2`,
+		connector, userID,
+	).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get role: %w", err)
+	}
+	return name, nil
+}
+
+func (s *Store) DeleteRole(ctx context.Context, connector, userID string) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM role_assignments WHERE connector=$1 AND user_id=$2`,
+		connector, userID,
+	)
+	return err
+}
+
+func (s *Store) DeleteSoul(ctx context.Context, connector, userID string) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM soul_assignments WHERE connector=$1 AND user_id=$2`,
+		connector, userID,
+	)
+	return err
+}
+
+func (s *Store) DeleteMemories(ctx context.Context, connector, userID string) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM memories WHERE connector=$1 AND user_id=$2`,
+		connector, userID,
+	)
+	return err
+}
+
+func (s *Store) AddAllow(ctx context.Context, connector, number string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO allowlist (connector, number) VALUES ($1, $2)
+		ON CONFLICT (connector, number) DO NOTHING
+	`, connector, number)
+	return err
+}
+
+func (s *Store) RemoveAllow(ctx context.Context, connector, number string) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM allowlist WHERE connector=$1 AND number=$2`,
+		connector, number,
+	)
+	return err
+}
+
+func (s *Store) ListAllow(ctx context.Context, connector string) ([]string, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT number FROM allowlist WHERE connector=$1 ORDER BY number`,
+		connector,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nums []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		nums = append(nums, n)
+	}
+	return nums, rows.Err()
 }
 
 func (s *Store) SaveMemory(ctx context.Context, connector, userID, fact string, embedding []float32) error {

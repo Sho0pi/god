@@ -26,10 +26,6 @@ func New(ctx context.Context, apiKey, model string) (*Client, error) {
 	return &Client{client: c, model: model}, nil
 }
 
-func (c *Client) Chat(ctx context.Context, history []llm.Message, tools []tool.Tool) (*llm.Response, error) {
-	return c.ChatWithSystem(ctx, "", history, tools)
-}
-
 func (c *Client) ChatWithSystem(ctx context.Context, systemPrompt string, history []llm.Message, tools []tool.Tool) (*llm.Response, error) {
 	config := &genai.GenerateContentConfig{}
 

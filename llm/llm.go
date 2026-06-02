@@ -31,6 +31,5 @@ type Response struct {
 }
 
 type LLM interface {
-	Chat(ctx context.Context, history []Message, tools []tool.Tool) (*Response, error)
 	ChatWithSystem(ctx context.Context, systemPrompt string, history []Message, tools []tool.Tool) (*Response, error)
 }
