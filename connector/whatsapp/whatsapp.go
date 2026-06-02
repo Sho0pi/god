@@ -41,8 +41,8 @@ type Connector struct {
 	configFn  func() *config.Config // always returns latest config
 	// allowSource, when set, returns extra allow-list entries from the store
 	// (managed at runtime via the /allow admin command). Merged with yaml.
-	allowSource func() []string
-	handler     func(ctx context.Context, msg connector.Message)
+	allowSource  func() []string
+	handler      func(ctx context.Context, msg connector.Message)
 	client       *whatsmeow.Client
 	container    *sqlstore.Container
 	mu           sync.Mutex

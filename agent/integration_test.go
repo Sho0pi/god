@@ -19,14 +19,14 @@ import (
 // --- stateful mock store ---
 
 type stateStore struct {
-	mu      sync.Mutex
-	souls   map[string]string
-	roles   map[string]string
-	facts   map[string][]string
+	mu    sync.Mutex
+	souls map[string]string
+	roles map[string]string
+	facts map[string][]string
 
-	deleteSoulCalls    []string
-	deleteRoleCalls    []string
-	deleteMemCalls     []string
+	deleteSoulCalls []string
+	deleteRoleCalls []string
+	deleteMemCalls  []string
 }
 
 func newStateStore() *stateStore {
@@ -40,43 +40,51 @@ func newStateStore() *stateStore {
 func (s *stateStore) key(connector, userID string) string { return connector + ":" + userID }
 
 func (s *stateStore) AssignSoul(_ context.Context, c, u, soul string) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.souls[s.key(c, u)] = soul
 	return nil
 }
 func (s *stateStore) GetSoul(_ context.Context, c, u string) (string, error) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.souls[s.key(c, u)], nil
 }
 func (s *stateStore) DeleteSoul(_ context.Context, c, u string) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.deleteSoulCalls = append(s.deleteSoulCalls, s.key(c, u))
 	delete(s.souls, s.key(c, u))
 	return nil
 }
 func (s *stateStore) AssignRole(_ context.Context, c, u, role string) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.roles[s.key(c, u)] = role
 	return nil
 }
 func (s *stateStore) GetRole(_ context.Context, c, u string) (string, error) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.roles[s.key(c, u)], nil
 }
 func (s *stateStore) DeleteRole(_ context.Context, c, u string) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.deleteRoleCalls = append(s.deleteRoleCalls, s.key(c, u))
 	delete(s.roles, s.key(c, u))
 	return nil
 }
 func (s *stateStore) SaveMemory(_ context.Context, c, u, fact string, _ []float32) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	k := s.key(c, u)
 	s.facts[k] = append(s.facts[k], fact)
 	return nil
 }
 func (s *stateStore) SearchMemories(_ context.Context, c, u string, _ []float32, limit int) ([]string, error) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	all := s.facts[s.key(c, u)]
 	if len(all) > limit {
 		return all[:limit], nil
@@ -84,7 +92,8 @@ func (s *stateStore) SearchMemories(_ context.Context, c, u string, _ []float32,
 	return all, nil
 }
 func (s *stateStore) DeleteMemories(_ context.Context, c, u string) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	k := s.key(c, u)
 	s.deleteMemCalls = append(s.deleteMemCalls, k)
 	delete(s.facts, k)
@@ -130,7 +139,8 @@ func runAndWait(t *testing.T, ctx context.Context, conn *mockConnector, a *agent
 	conn.waitReady(t)
 	return func(userID, text string) string {
 		prevCount := func() int {
-			conn.mu.Lock(); defer conn.mu.Unlock()
+			conn.mu.Lock()
+			defer conn.mu.Unlock()
 			return len(conn.sent)
 		}()
 		conn.handler(ctx, connector.Message{
@@ -212,13 +222,19 @@ func TestIntegration_SoulOnboarding(t *testing.T) {
 		conn.handler(ctx, connector.Message{Connector: "test", UserID: "u1", ChatID: "u1", SenderID: "u1", Text: text})
 		deadline := time.After(2 * time.Second)
 		for {
-			conn.mu.Lock(); n := len(conn.sent); conn.mu.Unlock()
+			conn.mu.Lock()
+			n := len(conn.sent)
+			conn.mu.Unlock()
 			if n > prev {
-				conn.mu.Lock(); r := conn.sent[n-1].text; conn.mu.Unlock()
+				conn.mu.Lock()
+				r := conn.sent[n-1].text
+				conn.mu.Unlock()
 				return r
 			}
 			select {
-			case <-deadline: t.Fatal("timeout"); return ""
+			case <-deadline:
+				t.Fatal("timeout")
+				return ""
 			case <-time.After(10 * time.Millisecond):
 			}
 		}
@@ -451,7 +467,7 @@ func TestIntegration_RoleToolFiltering(t *testing.T) {
 
 	a := agent.New(conn, wrapped, r, &mockEmbedder{}, st, agent.Options{
 		Roles: map[string]config.RoleConfig{
-			"guest": {Tools: []string{"calculator"}},        // only calculator
+			"guest": {Tools: []string{"calculator"}}, // only calculator
 			"user":  {Tools: []string{"calculator", "web_search", "remember"}},
 		},
 		DefaultSouls: map[string]string{"test": "default"},
@@ -491,11 +507,15 @@ func TestIntegration_RoleLLMRouting(t *testing.T) {
 	var mu sync.Mutex
 
 	adminLLM := &capturingLLM{fn: func(s string, h []llm.Message) (*llm.Response, error) {
-		mu.Lock(); adminCalls++; mu.Unlock()
+		mu.Lock()
+		adminCalls++
+		mu.Unlock()
 		return &llm.Response{Text: "admin response"}, nil
 	}}
 	userLLM := &capturingLLM{fn: func(s string, h []llm.Message) (*llm.Response, error) {
-		mu.Lock(); userCalls++; mu.Unlock()
+		mu.Lock()
+		userCalls++
+		mu.Unlock()
 		return &llm.Response{Text: "user response"}, nil
 	}}
 	defaultLLM := &mockLLM{response: &llm.Response{Text: "default"}}

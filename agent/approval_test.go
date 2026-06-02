@@ -19,7 +19,7 @@ type recordTool struct {
 	calls int
 }
 
-func (t *recordTool) Name() string        { return "testtool" }
+func (t *recordTool) Name() string         { return "testtool" }
 func (t *recordTool) Description() string  { return "test tool" }
 func (t *recordTool) Schema() *tool.Schema { return &tool.Schema{} }
 func (t *recordTool) Execute(_ context.Context, _ map[string]any) (string, error) {

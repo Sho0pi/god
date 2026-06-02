@@ -39,7 +39,7 @@ func TestCalculator(t *testing.T) {
 		{"floor(3.9)", 3},
 		{"ceil(3.1)", 4},
 		{"round(3.5)", 4},
-		{"2 + 3 * 4", 14},     // operator precedence
+		{"2 + 3 * 4", 14}, // operator precedence
 		{"pi", math.Pi},
 		{"e", math.E},
 		{"log(1)", 0},

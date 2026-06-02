@@ -3,7 +3,7 @@ package tool
 import "context"
 
 type Property struct {
-	Type        string   // "string", "number", "boolean"
+	Type        string // "string", "number", "boolean"
 	Description string
 	Enum        []string // optional
 }
@@ -14,8 +14,8 @@ type Schema struct {
 }
 
 type Tool interface {
-	Name()        string
+	Name() string
 	Description() string
-	Schema()      *Schema
+	Schema() *Schema
 	Execute(ctx context.Context, args map[string]any) (string, error)
 }

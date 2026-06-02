@@ -40,7 +40,7 @@ func (m *mockStore) SaveMemory(_ context.Context, connector, userID, fact string
 func (m *mockStore) SearchMemories(_ context.Context, _, _ string, _ []float32, _ int) ([]string, error) {
 	return nil, nil
 }
-func (m *mockStore) AssignSoul(_ context.Context, _, _, _ string) error     { return nil }
+func (m *mockStore) AssignSoul(_ context.Context, _, _, _ string) error      { return nil }
 func (m *mockStore) GetSoul(_ context.Context, _, _ string) (string, error)  { return "", nil }
 func (m *mockStore) DeleteSoul(_ context.Context, _, _ string) error         { return nil }
 func (m *mockStore) AssignRole(_ context.Context, _, _, _ string) error      { return nil }

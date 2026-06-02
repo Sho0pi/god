@@ -92,13 +92,13 @@ type savedMemory struct {
 	fact      string
 }
 
-func (s *mockStore) AssignSoul(_ context.Context, _, _, _ string) error   { return nil }
+func (s *mockStore) AssignSoul(_ context.Context, _, _, _ string) error     { return nil }
 func (s *mockStore) GetSoul(_ context.Context, _, _ string) (string, error) { return "", nil }
-func (s *mockStore) DeleteSoul(_ context.Context, _, _ string) error      { return nil }
-func (s *mockStore) AssignRole(_ context.Context, _, _, _ string) error   { return nil }
+func (s *mockStore) DeleteSoul(_ context.Context, _, _ string) error        { return nil }
+func (s *mockStore) AssignRole(_ context.Context, _, _, _ string) error     { return nil }
 func (s *mockStore) GetRole(_ context.Context, _, _ string) (string, error) { return "", nil }
-func (s *mockStore) DeleteRole(_ context.Context, _, _ string) error      { return nil }
-func (s *mockStore) DeleteMemories(_ context.Context, _, _ string) error  { return nil }
+func (s *mockStore) DeleteRole(_ context.Context, _, _ string) error        { return nil }
+func (s *mockStore) DeleteMemories(_ context.Context, _, _ string) error    { return nil }
 func (s *mockStore) SaveMemory(_ context.Context, conn, userID, fact string, _ []float32) error {
 	s.mu.Lock()
 	s.saved = append(s.saved, savedMemory{conn, userID, fact})

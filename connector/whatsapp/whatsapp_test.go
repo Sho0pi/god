@@ -11,7 +11,7 @@ func TestPhoneMatch(t *testing.T) {
 		a, b string
 		want bool
 	}{
-		{"0501234567", "972501234567", true},  // local IL vs full international
+		{"0501234567", "972501234567", true},   // local IL vs full international
 		{"972501234567", "972501234567", true}, // exact
 		{"501234567", "972501234567", true},    // no trunk zero, missing country code
 		{"0501234567", "0507654321", false},    // different numbers
