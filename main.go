@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -10,12 +11,16 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/sho0pi/god/agent"
+	cliconn "github.com/sho0pi/god/connector/cli"
 	"github.com/sho0pi/god/connector/whatsapp"
 	"github.com/sho0pi/god/llm/gemini"
 )
 
 func main() {
 	_ = godotenv.Load()
+
+	mode := flag.String("mode", "whatsapp", "connector mode: whatsapp or cli")
+	flag.Parse()
 
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
@@ -24,7 +29,7 @@ func main() {
 
 	model := os.Getenv("GEMINI_MODEL")
 	if model == "" {
-		model = "gemini-2.0-flash"
+		model = "gemini-3.1-flash-lite"
 	}
 
 	storePath := os.Getenv("WHATSAPP_STORE_PATH")
@@ -41,8 +46,15 @@ func main() {
 	}
 	defer llmClient.Close()
 
-	waConnector := whatsapp.New(storePath)
-	a := agent.New(waConnector, llmClient)
+	var a *agent.Agent
+	switch *mode {
+	case "cli":
+		a = agent.New(cliconn.New(), llmClient)
+	case "whatsapp":
+		a = agent.New(whatsapp.New(storePath), llmClient)
+	default:
+		log.Fatalf("unknown mode %q — use 'cli' or 'whatsapp'", *mode)
+	}
 
 	if err := a.Run(ctx); err != nil {
 		log.Printf("agent stopped: %v", err)
