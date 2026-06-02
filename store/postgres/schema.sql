@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS vector;
-
 CREATE TABLE IF NOT EXISTS soul_assignments (
     connector  TEXT NOT NULL,
     user_id    TEXT NOT NULL,

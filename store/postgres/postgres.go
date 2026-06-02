@@ -19,12 +19,25 @@ type Store struct {
 }
 
 func New(ctx context.Context, url string) (*Store, error) {
+	// Step 1: create the vector extension via a direct one-off connection.
+	// This must happen before the pool starts so AfterConnect can register
+	// the vector type (which only exists after the extension is installed).
+	bootstrap, err := pgx.Connect(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap connect: %w", err)
+	}
+	_, err = bootstrap.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
+	bootstrap.Close(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create vector extension: %w", err)
+	}
+
+	// Step 2: build the pool; AfterConnect registers the vector type now that
+	// the extension exists.
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse db url: %w", err)
 	}
-
-	// Register pgvector types for every new connection in the pool.
 	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		return pgxvector.RegisterTypes(ctx, conn)
 	}
@@ -34,6 +47,7 @@ func New(ctx context.Context, url string) (*Store, error) {
 		return nil, fmt.Errorf("open db pool: %w", err)
 	}
 
+	// Step 3: run the rest of the schema (tables + indexes).
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
@@ -47,7 +61,6 @@ func (s *Store) Close() error {
 	return nil
 }
 
-// AssignSoul upserts the soul for a (connector, user_id) pair.
 func (s *Store) AssignSoul(ctx context.Context, connector, userID, soulName string) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO soul_assignments (connector, user_id, soul_name, updated_at)
@@ -58,7 +71,6 @@ func (s *Store) AssignSoul(ctx context.Context, connector, userID, soulName stri
 	return err
 }
 
-// GetSoul returns the soul name for a user, or "" if not assigned.
 func (s *Store) GetSoul(ctx context.Context, connector, userID string) (string, error) {
 	var name string
 	err := s.pool.QueryRow(ctx,
@@ -66,13 +78,11 @@ func (s *Store) GetSoul(ctx context.Context, connector, userID string) (string, 
 		connector, userID,
 	).Scan(&name)
 	if err != nil {
-		// pgx returns pgx.ErrNoRows when not found — return empty string, not an error.
 		return "", nil
 	}
 	return name, nil
 }
 
-// SaveMemory persists a fact with its vector embedding.
 func (s *Store) SaveMemory(ctx context.Context, connector, userID, fact string, embedding []float32) error {
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO memories (connector, user_id, fact, embedding) VALUES ($1, $2, $3, $4)`,
@@ -81,7 +91,6 @@ func (s *Store) SaveMemory(ctx context.Context, connector, userID, fact string, 
 	return err
 }
 
-// SearchMemories returns the top-K facts closest to the query embedding.
 func (s *Store) SearchMemories(ctx context.Context, connector, userID string, queryEmbedding []float32, limit int) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT fact
