@@ -1,6 +1,13 @@
 llm:
   model: gemini-3.1-flash-lite
 
+# PostgreSQL connection string (prefer DATABASE_URL env var for credentials)
+# database:
+#   url: "postgres://user:pass@localhost:5432/god"
+
+memory:
+  top_k: 5  # how many memories to inject per turn
+
 connectors:
   whatsapp:
     enabled: true

@@ -372,10 +372,13 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		return
 	}
 
+	phone := senderPhone(evt.Info.MessageSource)
 	msg := connector.Message{
-		ChatID:   evt.Info.Chat.String(),
-		SenderID: evt.Info.Sender.String(),
-		Text:     text,
+		Connector: "whatsapp",
+		UserID:    phone,
+		ChatID:    evt.Info.Chat.String(),
+		SenderID:  evt.Info.Sender.String(),
+		Text:      text,
 	}
 
 	log.Printf("whatsapp: msg from %s: %q", msg.SenderID, truncate(text, 60))

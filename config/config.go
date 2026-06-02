@@ -12,8 +12,18 @@ const DefaultPath = "god.yaml"
 
 type Config struct {
 	LLM        LLMConfig        `mapstructure:"llm"`
+	Database   DatabaseConfig   `mapstructure:"database"`
+	Memory     MemoryConfig     `mapstructure:"memory"`
 	Connectors ConnectorsConfig `mapstructure:"connectors"`
 	Tools      ToolsConfig      `mapstructure:"tools"`
+}
+
+type DatabaseConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+type MemoryConfig struct {
+	TopK int `mapstructure:"top_k"`
 }
 
 type LLMConfig struct {
@@ -67,6 +77,7 @@ func Load(path string) (*Loader, error) {
 	v.SetDefault("connectors.whatsapp.store_path", "data/whatsapp")
 	v.SetDefault("connectors.cli.enabled", true)
 	v.SetDefault("tools.places.enabled", true)
+	v.SetDefault("memory.top_k", 5)
 
 	v.SetConfigFile(path)
 

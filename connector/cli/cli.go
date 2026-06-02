@@ -39,9 +39,11 @@ func (c *Connector) Start(ctx context.Context) error {
 			}
 			if c.handler != nil {
 				c.handler(ctx, connector.Message{
-					ChatID:   "cli",
-					SenderID: "user",
-					Text:     text,
+					Connector: "cli",
+					UserID:    "local",
+					ChatID:    "cli",
+					SenderID:  "local",
+					Text:      text,
 				})
 			}
 		}
