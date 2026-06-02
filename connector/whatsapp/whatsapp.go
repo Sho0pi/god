@@ -57,6 +57,11 @@ func New(storePath string, allow []string) *Connector {
 			norm = append(norm, d)
 		}
 	}
+	if len(norm) == 0 {
+		log.Println("whatsapp: allow list empty — accepting all senders")
+	} else {
+		log.Printf("whatsapp: allow list: %v", norm)
+	}
 	return &Connector{storePath: storePath, allow: norm}
 }
 
@@ -306,8 +311,15 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		return
 	}
 
-	if !c.isAllowed(evt.Info.Sender.User) {
-		log.Printf("whatsapp: blocked sender %s (not in allow list)", evt.Info.Sender.User)
+	// For DMs, the chat JID IS the other person's phone number.
+	// For groups, use the sender's JID (participant in the group).
+	checkUser := evt.Info.Chat.User
+	if evt.Info.Chat.Server == types.GroupServer {
+		checkUser = evt.Info.Sender.User
+	}
+
+	if !c.isAllowed(checkUser) {
+		log.Printf("whatsapp: blocked %q (not in allow list)", checkUser)
 		return
 	}
 
