@@ -1,17 +1,23 @@
 llm:
-  # Gemini model (overrides GEMINI_MODEL env var)
   model: gemini-3.1-flash-lite
 
 connectors:
   whatsapp:
     enabled: true
     store_path: data/whatsapp
+
     # Phone number whitelist. Leave empty to allow everyone.
-    # Accepts any format: +972501234567, 972501234567, etc.
     allow: []
     # allow:
-    #   - "+972501234567"
-    #   - "+1415555012"
+    #   - "972501234567"
+
+    # Group chat behaviour (optional).
+    # mention_only: true  → only respond when @mentioned
+    # prefixes: ["!"]     → only respond when message starts with prefix
+    # both unset          → respond to all group messages
+    group_trigger:
+      mention_only: false
+      prefixes: []
 
   cli:
     enabled: true

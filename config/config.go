@@ -24,9 +24,19 @@ type ConnectorsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool     `mapstructure:"enabled"`
-	StorePath string   `mapstructure:"store_path"`
-	Allow     []string `mapstructure:"allow"`
+	Enabled      bool               `mapstructure:"enabled"`
+	StorePath    string             `mapstructure:"store_path"`
+	Allow        []string           `mapstructure:"allow"`
+	GroupTrigger GroupTriggerConfig `mapstructure:"group_trigger"`
+}
+
+// GroupTriggerConfig controls when the bot responds in group chats.
+// mention_only: only respond when @mentioned.
+// prefixes: respond when message starts with one of these strings.
+// neither set: respond to all group messages.
+type GroupTriggerConfig struct {
+	MentionOnly bool     `mapstructure:"mention_only"`
+	Prefixes    []string `mapstructure:"prefixes"`
 }
 
 type CLIConfig struct {

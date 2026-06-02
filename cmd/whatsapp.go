@@ -28,7 +28,7 @@ var whatsappCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		runAgent(ctx, whatsapp.New(storePath, cfg.Connectors.WhatsApp.Allow))
+		runAgent(ctx, whatsapp.New(storePath, cfg.Connectors.WhatsApp.Allow, cfg.Connectors.WhatsApp.GroupTrigger))
 		return nil
 	},
 }

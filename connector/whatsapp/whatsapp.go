@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	_ "modernc.org/sqlite"
 
+	"github.com/sho0pi/god/config"
 	"github.com/sho0pi/god/connector"
 )
 
@@ -38,6 +39,7 @@ const (
 type Connector struct {
 	storePath    string
 	allow        []string // normalised digits; empty = allow all
+	groupTrigger config.GroupTriggerConfig
 	handler      func(ctx context.Context, msg connector.Message)
 	client       *whatsmeow.Client
 	container    *sqlstore.Container
@@ -50,7 +52,7 @@ type Connector struct {
 	wg           sync.WaitGroup
 }
 
-func New(storePath string, allow []string) *Connector {
+func New(storePath string, allow []string, groupTrigger config.GroupTriggerConfig) *Connector {
 	norm := make([]string, 0, len(allow))
 	for _, n := range allow {
 		if d := digitsOnly(n); d != "" {
@@ -62,7 +64,7 @@ func New(storePath string, allow []string) *Connector {
 	} else {
 		log.Printf("whatsapp: allow list: %v", norm)
 	}
-	return &Connector{storePath: storePath, allow: norm}
+	return &Connector{storePath: storePath, allow: norm, groupTrigger: groupTrigger}
 }
 
 func (c *Connector) isAllowed(senderUser string) bool {
@@ -331,6 +333,20 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		return
 	}
 
+	// Group message handling.
+	if src.IsGroup {
+		c.mu.Lock()
+		client := c.client
+		c.mu.Unlock()
+
+		isMentioned, trimmed := c.isMentionedInGroup(evt.Message, client)
+		ok, text2 := c.shouldRespondInGroup(isMentioned, trimmed)
+		if !ok {
+			return
+		}
+		text = text2
+	}
+
 	if c.handler == nil {
 		return
 	}
@@ -410,6 +426,55 @@ func locationMetaBlock(lat, lng float64, name, address, caption string) string {
 	}
 	b, _ := json.Marshal(meta{Latitude: lat, Longitude: lng, Name: name, Address: address, Caption: caption})
 	return "Location (untrusted metadata):\n```json\n" + string(b) + "\n```"
+}
+
+// isMentionedInGroup returns true if the bot's own JID appears in the message's mention list.
+// It also returns the text with the @mention stripped.
+func (c *Connector) isMentionedInGroup(msg *waE2E.Message, client *whatsmeow.Client) (bool, string) {
+	text := extractText(msg)
+	if client == nil || client.Store.ID == nil {
+		return false, text
+	}
+
+	var mentionedJIDs []string
+	if msg.ExtendedTextMessage != nil && msg.ExtendedTextMessage.ContextInfo != nil {
+		mentionedJIDs = msg.ExtendedTextMessage.ContextInfo.MentionedJID
+	}
+
+	botUser := client.Store.ID.User
+	for _, jid := range mentionedJIDs {
+		j, err := types.ParseJID(jid)
+		if err != nil {
+			continue
+		}
+		if j.User == botUser {
+			// Strip the @mention from the text.
+			cleaned := strings.ReplaceAll(text, "@"+botUser, "")
+			return true, strings.TrimSpace(cleaned)
+		}
+	}
+	return false, text
+}
+
+// shouldRespondInGroup applies group_trigger config — mirrors picoclaw's ShouldRespondInGroup.
+func (c *Connector) shouldRespondInGroup(isMentioned bool, content string) (bool, string) {
+	gt := c.groupTrigger
+
+	if isMentioned {
+		return true, content
+	}
+	if gt.MentionOnly {
+		return false, content
+	}
+	if len(gt.Prefixes) > 0 {
+		for _, prefix := range gt.Prefixes {
+			if prefix != "" && strings.HasPrefix(content, prefix) {
+				return true, strings.TrimSpace(strings.TrimPrefix(content, prefix))
+			}
+		}
+		return false, content
+	}
+	return true, content
 }
 
 func parseJID(s string) (types.JID, error) {
