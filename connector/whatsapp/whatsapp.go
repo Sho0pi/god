@@ -37,6 +37,7 @@ const (
 
 type Connector struct {
 	storePath    string
+	allow        []string // normalised digits; empty = allow all
 	handler      func(ctx context.Context, msg connector.Message)
 	client       *whatsmeow.Client
 	container    *sqlstore.Container
@@ -49,8 +50,37 @@ type Connector struct {
 	wg           sync.WaitGroup
 }
 
-func New(storePath string) *Connector {
-	return &Connector{storePath: storePath}
+func New(storePath string, allow []string) *Connector {
+	norm := make([]string, 0, len(allow))
+	for _, n := range allow {
+		if d := digitsOnly(n); d != "" {
+			norm = append(norm, d)
+		}
+	}
+	return &Connector{storePath: storePath, allow: norm}
+}
+
+func (c *Connector) isAllowed(senderUser string) bool {
+	if len(c.allow) == 0 {
+		return true
+	}
+	normalized := digitsOnly(senderUser)
+	for _, a := range c.allow {
+		if a == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func digitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (c *Connector) SetMessageHandler(handler func(ctx context.Context, msg connector.Message)) {
@@ -273,6 +303,11 @@ func (c *Connector) reconnectWithBackoff() {
 
 func (c *Connector) handleIncoming(evt *events.Message) {
 	if evt.Info.IsFromMe || evt.Message == nil {
+		return
+	}
+
+	if !c.isAllowed(evt.Info.Sender.User) {
+		log.Printf("whatsapp: blocked sender %s (not in allow list)", evt.Info.Sender.User)
 		return
 	}
 

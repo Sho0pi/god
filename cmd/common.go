@@ -15,9 +15,11 @@ import (
 func buildRegistry() *tool.Registry {
 	r := tool.NewRegistry()
 
-	if key := os.Getenv("GOOGLE_PLACES_API_KEY"); key != "" {
-		r.Register(toolplaces.NewSearchTool(key))
-		log.Println("tool: search_places enabled")
+	if cfg.Tools.Places.Enabled {
+		if key := os.Getenv("GOOGLE_PLACES_API_KEY"); key != "" {
+			r.Register(toolplaces.NewSearchTool(key))
+			log.Println("tool: search_places enabled")
+		}
 	}
 
 	return r
@@ -28,7 +30,11 @@ func runAgent(ctx context.Context, c connector.Connector) {
 	if apiKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
-	model := os.Getenv("GEMINI_MODEL")
+
+	model := cfg.LLM.Model
+	if model == "" {
+		model = os.Getenv("GEMINI_MODEL")
+	}
 	if model == "" {
 		model = "gemini-3.1-flash-lite"
 	}
