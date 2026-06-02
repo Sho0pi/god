@@ -78,10 +78,10 @@ func (c *Connector) isAllowed(senderUser string) bool {
 	return false
 }
 
-// senderPhone returns the phone number of the sender regardless of addressing mode.
-// In LID mode, Sender.User is a device ID — the real phone number is in SenderAlt.
+// senderPhone returns the phone number of the sender.
+// When SenderAlt is set, the Sender JID is a LID (device ID) — SenderAlt holds the real phone.
 func senderPhone(src types.MessageSource) string {
-	if src.AddressingMode == types.AddressingModeLID && !src.SenderAlt.IsEmpty() {
+	if !src.SenderAlt.IsEmpty() {
 		return src.SenderAlt.User
 	}
 	return src.Sender.User
@@ -320,8 +320,9 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		return
 	}
 
-	if !c.isAllowed(senderPhone(evt.Info.MessageSource)) {
-		log.Printf("whatsapp: blocked %q (not in allow list)", senderPhone(evt.Info.MessageSource))
+	src := evt.Info.MessageSource
+	if !c.isAllowed(senderPhone(src)) {
+		log.Printf("whatsapp: blocked %q (not in allow list)", senderPhone(src))
 		return
 	}
 
