@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# user config (copy from god.example.yaml)
+god.yaml
+
 # WhatsApp session data
 data/
 

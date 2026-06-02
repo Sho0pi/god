@@ -1,9 +1,7 @@
 package config
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	"github.com/spf13/viper"
 )
@@ -54,10 +52,7 @@ func Load(path string) (*Config, error) {
 	v.SetConfigFile(path)
 
 	if err := v.ReadInConfig(); err != nil {
-		// SetConfigFile returns a path error when the file is missing — that's fine.
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("read config %q: %w", path, err)
-		}
+		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 
 	var cfg Config
