@@ -3,8 +3,10 @@ package whatsapp
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,19 +304,62 @@ func extractText(msg *waE2E.Message) string {
 			return t
 		}
 	}
+	if loc := msg.GetLiveLocationMessage(); loc != nil {
+		lat, lng := loc.GetDegreesLatitude(), loc.GetDegreesLongitude()
+		if isFinite(lat) && isFinite(lng) {
+			body := fmt.Sprintf("🛰 Live location: %s%s", formatCoords(lat, lng), formatAccuracy(loc.GetAccuracyInMeters()))
+			if meta := locationMetaBlock(lat, lng, "", "", loc.GetCaption()); meta != "" {
+				body += "\n" + meta
+			}
+			return body
+		}
+	}
 	if loc := msg.GetLocationMessage(); loc != nil {
-		lat := loc.GetDegreesLatitude()
-		lng := loc.GetDegreesLongitude()
-		text := fmt.Sprintf("[Location] lat=%.6f lng=%.6f https://maps.google.com/?q=%.6f,%.6f", lat, lng, lat, lng)
-		if name := loc.GetName(); name != "" {
-			text += "\nName: " + name
+		lat, lng := loc.GetDegreesLatitude(), loc.GetDegreesLongitude()
+		if isFinite(lat) && isFinite(lng) {
+			var body string
+			if loc.GetIsLive() {
+				body = fmt.Sprintf("🛰 Live location: %s%s", formatCoords(lat, lng), formatAccuracy(loc.GetAccuracyInMeters()))
+			} else {
+				body = fmt.Sprintf("📍 %s%s", formatCoords(lat, lng), formatAccuracy(loc.GetAccuracyInMeters()))
+			}
+			if meta := locationMetaBlock(lat, lng, loc.GetName(), loc.GetAddress(), loc.GetComment()); meta != "" {
+				body += "\n" + meta
+			}
+			return body
 		}
-		if addr := loc.GetAddress(); addr != "" {
-			text += "\nAddress: " + addr
-		}
-		return text
 	}
 	return ""
+}
+
+func isFinite(f float64) bool {
+	return !math.IsInf(f, 0) && !math.IsNaN(f)
+}
+
+func formatCoords(lat, lng float64) string {
+	return fmt.Sprintf("%.6f, %.6f", lat, lng)
+}
+
+func formatAccuracy(meters uint32) string {
+	if meters == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" ±%dm", meters)
+}
+
+func locationMetaBlock(lat, lng float64, name, address, caption string) string {
+	if name == "" && address == "" && caption == "" {
+		return ""
+	}
+	type meta struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+		Name      string  `json:"name,omitempty"`
+		Address   string  `json:"address,omitempty"`
+		Caption   string  `json:"caption,omitempty"`
+	}
+	b, _ := json.Marshal(meta{Latitude: lat, Longitude: lng, Name: name, Address: address, Caption: caption})
+	return "Location (untrusted metadata):\n```json\n" + string(b) + "\n```"
 }
 
 func parseJID(s string) (types.JID, error) {
