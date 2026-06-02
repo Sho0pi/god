@@ -274,11 +274,7 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		return
 	}
 
-	text := evt.Message.GetConversation()
-	if text == "" && evt.Message.ExtendedTextMessage != nil {
-		text = evt.Message.ExtendedTextMessage.GetText()
-	}
-	text = strings.TrimSpace(text)
+	text := extractText(evt.Message)
 	if text == "" {
 		return
 	}
@@ -295,6 +291,30 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 
 	log.Printf("whatsapp: msg from %s: %q", msg.SenderID, truncate(text, 60))
 	go c.handler(c.runCtx, msg)
+}
+
+func extractText(msg *waE2E.Message) string {
+	if t := strings.TrimSpace(msg.GetConversation()); t != "" {
+		return t
+	}
+	if msg.ExtendedTextMessage != nil {
+		if t := strings.TrimSpace(msg.ExtendedTextMessage.GetText()); t != "" {
+			return t
+		}
+	}
+	if loc := msg.GetLocationMessage(); loc != nil {
+		lat := loc.GetDegreesLatitude()
+		lng := loc.GetDegreesLongitude()
+		text := fmt.Sprintf("[Location] lat=%.6f lng=%.6f https://maps.google.com/?q=%.6f,%.6f", lat, lng, lat, lng)
+		if name := loc.GetName(); name != "" {
+			text += "\nName: " + name
+		}
+		if addr := loc.GetAddress(); addr != "" {
+			text += "\nAddress: " + addr
+		}
+		return text
+	}
+	return ""
 }
 
 func parseJID(s string) (types.JID, error) {
