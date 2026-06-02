@@ -441,15 +441,19 @@ func (c *Connector) isMentionedInGroup(msg *waE2E.Message, client *whatsmeow.Cli
 		mentionedJIDs = msg.ExtendedTextMessage.ContextInfo.MentionedJID
 	}
 
-	botUser := client.Store.ID.User
-	for _, jid := range mentionedJIDs {
-		j, err := types.ParseJID(jid)
+	// Collect both the phone-number user and the LID user so we match
+	// regardless of which addressing mode WhatsApp used for the @mention.
+	botPN := client.Store.ID.User
+	botLID := client.Store.GetLID().User
+
+	for _, raw := range mentionedJIDs {
+		j, err := types.ParseJID(raw)
 		if err != nil {
 			continue
 		}
-		if j.User == botUser {
-			// Strip the @mention from the text.
-			cleaned := strings.ReplaceAll(text, "@"+botUser, "")
+		if j.User == botPN || (botLID != "" && j.User == botLID) {
+			// Strip @<user> from the text — WhatsApp encodes as @<LID or PN>.
+			cleaned := strings.ReplaceAll(text, "@"+j.User, "")
 			return true, strings.TrimSpace(cleaned)
 		}
 	}
