@@ -83,7 +83,7 @@ func TestPostgres_SaveAndSearchMemory(t *testing.T) {
 	// Use a simple 3-dim embedding (pgvector needs consistent dims — 768 in prod,
 	// but we override the schema dimension for test by using 3-dim vectors directly).
 	// Actually our schema hardcodes vector(768), so we need 768-dim here.
-	embedding := make([]float32, 768)
+	embedding := make([]float32, 3072)
 	embedding[0] = 1.0 // distinguishable
 
 	if err := s.SaveMemory(ctx, connector, userID, "user likes Go", embedding); err != nil {
@@ -111,7 +111,7 @@ func TestPostgres_SearchMemory_WrongUser(t *testing.T) {
 	}
 	defer s.Close()
 
-	embedding := make([]float32, 768)
+	embedding := make([]float32, 3072)
 	// Save under user A, search under user B — should return nothing.
 	_ = s.SaveMemory(ctx, "test", "userA_isolation_"+t.Name(), "secret", embedding)
 

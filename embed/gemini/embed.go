@@ -4,28 +4,37 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
-const defaultModel = "text-embedding-004"
+const defaultModel = "gemini-embedding-001"
 
 type Embedder struct {
-	model *genai.EmbeddingModel
+	client *genai.Client
+	model  string
 }
 
 func New(ctx context.Context, apiKey string) (*Embedder, error) {
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	c, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create genai client: %w", err)
 	}
-	return &Embedder{model: client.EmbeddingModel(defaultModel)}, nil
+	return &Embedder{client: c, model: defaultModel}, nil
 }
 
 func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	res, err := e.model.EmbedContent(ctx, genai.Text(text))
+	contents := []*genai.Content{
+		{Parts: []*genai.Part{{Text: text}}},
+	}
+	resp, err := e.client.Models.EmbedContent(ctx, e.model, contents, nil)
 	if err != nil {
 		return nil, fmt.Errorf("embed: %w", err)
 	}
-	return res.Embedding.Values, nil
+	if len(resp.Embeddings) == 0 {
+		return nil, fmt.Errorf("embed: empty response")
+	}
+	return resp.Embeddings[0].Values, nil
 }

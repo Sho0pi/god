@@ -11,9 +11,9 @@ CREATE TABLE IF NOT EXISTS memories (
     connector  TEXT        NOT NULL,
     user_id    TEXT        NOT NULL,
     fact       TEXT        NOT NULL,
-    embedding  vector(768) NOT NULL,
+    embedding  vector(3072) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS memories_embedding_idx
-    ON memories USING hnsw (embedding vector_cosine_ops);
+-- Index added when memory grows beyond ~10k rows per user.
+-- For now exact cosine scan is fast enough.

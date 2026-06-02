@@ -102,7 +102,11 @@ func (a *Agent) handleMessage(ctx context.Context, msg connector.Message) {
 
 		hist = append(hist,
 			llm.Message{Role: "model", ToolCall: tc},
-			llm.Message{ToolResult: &llm.ToolResult{Name: tc.Name, Result: result}},
+			llm.Message{ToolResult: &llm.ToolResult{
+				Name:             tc.Name,
+				Result:           result,
+				ThoughtSignature: tc.ThoughtSignature, // required for thinking models
+			}},
 		)
 	}
 

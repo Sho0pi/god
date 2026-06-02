@@ -7,6 +7,7 @@ import (
 
 	"github.com/sho0pi/god/agent"
 	"github.com/sho0pi/god/connector"
+	"github.com/sho0pi/god/embed"
 	embedgemini "github.com/sho0pi/god/embed/gemini"
 	"github.com/sho0pi/god/llm/gemini"
 	"github.com/sho0pi/god/store"
@@ -33,7 +34,17 @@ func buildStore(ctx context.Context) store.Store {
 	return s
 }
 
-func buildRegistry(ctx context.Context, s store.Store) *tool.Registry {
+func buildEmbedder(ctx context.Context, apiKey string) embed.Embedder {
+	e, err := embedgemini.New(ctx, apiKey)
+	if err != nil {
+		log.Printf("embedder init failed: %v", err)
+		return nil // explicit nil interface — safe for agent nil-check
+	}
+	log.Println("embedder: text-embedding-004 ready")
+	return e
+}
+
+func buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
 	r := tool.NewRegistry()
 
 	if cfg.Tools.Places.Enabled {
@@ -43,15 +54,9 @@ func buildRegistry(ctx context.Context, s store.Store) *tool.Registry {
 		}
 	}
 
-	if s != nil {
-		apiKey := os.Getenv("GEMINI_API_KEY")
-		embedder, err := embedgemini.New(ctx, apiKey)
-		if err != nil {
-			log.Printf("tool: embedder init failed: %v", err)
-		} else {
-			r.Register(memory.NewRememberTool(embedder, s))
-			log.Println("tool: remember enabled")
-		}
+	if s != nil && e != nil {
+		r.Register(memory.NewRememberTool(e, s))
+		log.Println("tool: remember enabled")
 	}
 
 	return r
@@ -82,21 +87,18 @@ func runAgent(ctx context.Context, c connector.Connector) {
 		defer s.Close()
 	}
 
-	var embedder *embedgemini.Embedder
+	var e embed.Embedder
 	if s != nil {
-		embedder, err = embedgemini.New(ctx, apiKey)
-		if err != nil {
-			log.Printf("embedder init: %v", err)
-		}
+		e = buildEmbedder(ctx, apiKey)
 	}
 
-	registry := buildRegistry(ctx, s)
 	topK := cfg.Memory.TopK
 	if topK == 0 {
 		topK = 5
 	}
 
-	if err := agent.New(c, llmClient, registry, embedder, s, topK).Run(ctx); err != nil {
+	a := agent.New(c, llmClient, buildRegistry(s, e), e, s, topK)
+	if err := a.Run(ctx); err != nil {
 		log.Printf("agent stopped: %v", err)
 	}
 }

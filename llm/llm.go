@@ -7,13 +7,15 @@ import (
 )
 
 type ToolCall struct {
-	Name string
-	Args map[string]any
+	Name             string
+	Args             map[string]any
+	ThoughtSignature []byte // round-tripped for thinking-enabled models
 }
 
 type ToolResult struct {
-	Name   string
-	Result string
+	Name             string
+	Result           string
+	ThoughtSignature []byte // copied from ToolCall when dispatching
 }
 
 type Message struct {
