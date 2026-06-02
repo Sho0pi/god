@@ -5,69 +5,64 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 const DefaultPath = "god.yaml"
 
 type Config struct {
-	LLM        LLMConfig        `yaml:"llm"`
-	Connectors ConnectorsConfig `yaml:"connectors"`
-	Tools      ToolsConfig      `yaml:"tools"`
+	LLM        LLMConfig        `mapstructure:"llm"`
+	Connectors ConnectorsConfig `mapstructure:"connectors"`
+	Tools      ToolsConfig      `mapstructure:"tools"`
 }
 
 type LLMConfig struct {
-	Model string `yaml:"model"`
+	Model string `mapstructure:"model"`
 }
 
 type ConnectorsConfig struct {
-	WhatsApp WhatsAppConfig `yaml:"whatsapp"`
-	CLI      CLIConfig      `yaml:"cli"`
+	WhatsApp WhatsAppConfig `mapstructure:"whatsapp"`
+	CLI      CLIConfig      `mapstructure:"cli"`
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool     `yaml:"enabled"`
-	StorePath string   `yaml:"store_path"`
-	Allow     []string `yaml:"allow"` // phone numbers; empty = allow all
+	Enabled   bool     `mapstructure:"enabled"`
+	StorePath string   `mapstructure:"store_path"`
+	Allow     []string `mapstructure:"allow"`
 }
 
 type CLIConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `mapstructure:"enabled"`
 }
 
 type ToolsConfig struct {
-	Places ToolConfig `yaml:"places"`
+	Places ToolConfig `mapstructure:"places"`
 }
 
 type ToolConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `mapstructure:"enabled"`
 }
 
-// Load reads config from path. If the file does not exist, defaults are returned.
 func Load(path string) (*Config, error) {
-	cfg := defaults()
+	v := viper.New()
 
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read config %q: %w", path, err)
-	}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parse config %q: %w", path, err)
-	}
-	return cfg, nil
-}
+	v.SetDefault("connectors.whatsapp.enabled", true)
+	v.SetDefault("connectors.whatsapp.store_path", "data/whatsapp")
+	v.SetDefault("connectors.cli.enabled", true)
+	v.SetDefault("tools.places.enabled", true)
 
-func defaults() *Config {
-	return &Config{
-		Connectors: ConnectorsConfig{
-			WhatsApp: WhatsAppConfig{Enabled: true},
-			CLI:      CLIConfig{Enabled: true},
-		},
-		Tools: ToolsConfig{
-			Places: ToolConfig{Enabled: true},
-		},
+	v.SetConfigFile(path)
+
+	if err := v.ReadInConfig(); err != nil {
+		// SetConfigFile returns a path error when the file is missing — that's fine.
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("read config %q: %w", path, err)
+		}
 	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	return &cfg, nil
 }
