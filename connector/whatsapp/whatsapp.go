@@ -66,12 +66,17 @@ func (c *Connector) Start(ctx context.Context) error {
 	}
 
 	dbPath := filepath.Join(c.storePath, dbName)
-	db, err := sql.Open(sqliteDriver, "file:"+dbPath+"?_foreign_keys=on")
+	db, err := sql.Open(sqliteDriver, "file:"+dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+
+	if _, err = db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("enable foreign keys: %w", err)
+	}
 
 	waLogger := waLog.Stdout("WhatsApp", "WARN", true)
 	container := sqlstore.NewWithDB(db, sqliteDriver, waLogger)
