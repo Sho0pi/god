@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sho0pi/god/config"
 	"github.com/sho0pi/god/connector/whatsapp"
 )
 
@@ -28,16 +29,18 @@ var whatsappCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		runAgent(ctx, whatsapp.New(storePath, cfg.Connectors.WhatsApp.Allow, cfg.Connectors.WhatsApp.GroupTrigger))
+		waConnector := whatsapp.New(storePath, cfg.Connectors.WhatsApp.Allow, cfg.Connectors.WhatsApp.GroupTrigger)
+
+		loader.Watch(func(newCfg *config.Config) {
+			waConnector.Reload(newCfg.Connectors.WhatsApp.Allow, newCfg.Connectors.WhatsApp.GroupTrigger)
+		})
+
+		runAgent(ctx, waConnector)
 		return nil
 	},
 }
 
 func init() {
-	defaultStore := os.Getenv("WHATSAPP_STORE_PATH")
-	if defaultStore == "" {
-		defaultStore = "data/whatsapp"
-	}
 	whatsappCmd.Flags().String("store", "", "path to WhatsApp session storage (overrides config)")
 	_ = whatsappCmd.Flags().MarkHidden("store")
 	rootCmd.AddCommand(whatsappCmd)

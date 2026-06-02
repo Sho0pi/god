@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
@@ -30,6 +32,10 @@ type WhatsAppConfig struct {
 	GroupTrigger GroupTriggerConfig `mapstructure:"group_trigger"`
 }
 
+type CLIConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
 // GroupTriggerConfig controls when the bot responds in group chats.
 // mention_only: only respond when @mentioned.
 // prefixes: respond when message starts with one of these strings.
@@ -37,10 +43,6 @@ type WhatsAppConfig struct {
 type GroupTriggerConfig struct {
 	MentionOnly bool     `mapstructure:"mention_only"`
 	Prefixes    []string `mapstructure:"prefixes"`
-}
-
-type CLIConfig struct {
-	Enabled bool `mapstructure:"enabled"`
 }
 
 type ToolsConfig struct {
@@ -51,7 +53,14 @@ type ToolConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 }
 
-func Load(path string) (*Config, error) {
+// Loader holds the viper instance so callers can watch for config changes.
+type Loader struct {
+	v   *viper.Viper
+	Cfg *Config
+}
+
+// Load reads the config file and returns a Loader.
+func Load(path string) (*Loader, error) {
 	v := viper.New()
 
 	v.SetDefault("connectors.whatsapp.enabled", true)
@@ -69,5 +78,21 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
-	return &cfg, nil
+
+	return &Loader{v: v, Cfg: &cfg}, nil
+}
+
+// Watch starts watching the config file for changes and calls onChange with
+// the updated config each time the file is written.
+func (l *Loader) Watch(onChange func(*Config)) {
+	l.v.WatchConfig()
+	l.v.OnConfigChange(func(e fsnotify.Event) {
+		var cfg Config
+		if err := l.v.Unmarshal(&cfg); err != nil {
+			log.Printf("config: reload error: %v", err)
+			return
+		}
+		log.Printf("config: reloaded %s", e.Name)
+		onChange(&cfg)
+	})
 }

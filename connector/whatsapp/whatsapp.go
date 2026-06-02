@@ -37,7 +37,9 @@ const (
 )
 
 type Connector struct {
-	storePath    string
+	storePath string
+	// cfgMu protects allow and groupTrigger — reloaded on config change.
+	cfgMu        sync.RWMutex
 	allow        []string // normalised digits; empty = allow all
 	groupTrigger config.GroupTriggerConfig
 	handler      func(ctx context.Context, msg connector.Message)
@@ -53,12 +55,7 @@ type Connector struct {
 }
 
 func New(storePath string, allow []string, groupTrigger config.GroupTriggerConfig) *Connector {
-	norm := make([]string, 0, len(allow))
-	for _, n := range allow {
-		if d := digitsOnly(n); d != "" {
-			norm = append(norm, d)
-		}
-	}
+	norm := normalizeAllow(allow)
 	if len(norm) == 0 {
 		log.Println("whatsapp: allow list empty — accepting all senders")
 	} else {
@@ -67,12 +64,36 @@ func New(storePath string, allow []string, groupTrigger config.GroupTriggerConfi
 	return &Connector{storePath: storePath, allow: norm, groupTrigger: groupTrigger}
 }
 
+func normalizeAllow(allow []string) []string {
+	norm := make([]string, 0, len(allow))
+	for _, n := range allow {
+		if d := digitsOnly(n); d != "" {
+			norm = append(norm, d)
+		}
+	}
+	return norm
+}
+
+// Reload updates the allow list and group trigger without restarting.
+func (c *Connector) Reload(allow []string, gt config.GroupTriggerConfig) {
+	norm := normalizeAllow(allow)
+	c.cfgMu.Lock()
+	c.allow = norm
+	c.groupTrigger = gt
+	c.cfgMu.Unlock()
+	log.Printf("whatsapp: config reloaded — allow=%v mentionOnly=%v prefixes=%v",
+		norm, gt.MentionOnly, gt.Prefixes)
+}
+
 func (c *Connector) isAllowed(senderUser string) bool {
-	if len(c.allow) == 0 {
+	c.cfgMu.RLock()
+	allow := c.allow
+	c.cfgMu.RUnlock()
+	if len(allow) == 0 {
 		return true
 	}
 	normalized := digitsOnly(senderUser)
-	for _, a := range c.allow {
+	for _, a := range allow {
 		if a == normalized {
 			return true
 		}
@@ -462,7 +483,9 @@ func (c *Connector) isMentionedInGroup(msg *waE2E.Message, client *whatsmeow.Cli
 
 // shouldRespondInGroup applies group_trigger config — mirrors picoclaw's ShouldRespondInGroup.
 func (c *Connector) shouldRespondInGroup(isMentioned bool, content string) (bool, string) {
+	c.cfgMu.RLock()
 	gt := c.groupTrigger
+	c.cfgMu.RUnlock()
 
 	if isMentioned {
 		return true, content
