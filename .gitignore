@@ -27,6 +27,12 @@ go.work.sum
 # env file
 .env
 
+# WhatsApp session data
+data/
+
+# built binary
+/god
+
 # Editor/IDE
 # .idea/
 # .vscode/
