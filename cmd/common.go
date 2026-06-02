@@ -8,7 +8,20 @@ import (
 	"github.com/sho0pi/god/agent"
 	"github.com/sho0pi/god/connector"
 	"github.com/sho0pi/god/llm/gemini"
+	"github.com/sho0pi/god/tool"
+	toolplaces "github.com/sho0pi/god/tool/places"
 )
+
+func buildRegistry() *tool.Registry {
+	r := tool.NewRegistry()
+
+	if key := os.Getenv("GOOGLE_PLACES_API_KEY"); key != "" {
+		r.Register(toolplaces.NewSearchTool(key))
+		log.Println("tool: search_places enabled")
+	}
+
+	return r
+}
 
 func runAgent(ctx context.Context, c connector.Connector) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
@@ -26,7 +39,7 @@ func runAgent(ctx context.Context, c connector.Connector) {
 	}
 	defer llmClient.Close()
 
-	if err := agent.New(c, llmClient).Run(ctx); err != nil {
+	if err := agent.New(c, llmClient, buildRegistry()).Run(ctx); err != nil {
 		log.Printf("agent stopped: %v", err)
 	}
 }

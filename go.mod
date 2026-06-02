@@ -1,6 +1,6 @@
 module github.com/sho0pi/god
 
-go 1.25.8
+go 1.25.10
 
 require (
 	github.com/google/generative-ai-go v0.20.1
@@ -41,6 +41,7 @@ require (
 	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/steipete/goplaces v0.4.3 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
 	go.mau.fi/libsignal v0.2.2 // indirect
 	go.mau.fi/util v0.9.9 // indirect
