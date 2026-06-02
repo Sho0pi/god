@@ -78,6 +78,15 @@ func (c *Connector) isAllowed(senderUser string) bool {
 	return false
 }
 
+// senderPhone returns the phone number of the sender regardless of addressing mode.
+// In LID mode, Sender.User is a device ID — the real phone number is in SenderAlt.
+func senderPhone(src types.MessageSource) string {
+	if src.AddressingMode == types.AddressingModeLID && !src.SenderAlt.IsEmpty() {
+		return src.SenderAlt.User
+	}
+	return src.Sender.User
+}
+
 func digitsOnly(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -311,15 +320,8 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		return
 	}
 
-	// For DMs, the chat JID IS the other person's phone number.
-	// For groups, use the sender's JID (participant in the group).
-	checkUser := evt.Info.Chat.User
-	if evt.Info.Chat.Server == types.GroupServer {
-		checkUser = evt.Info.Sender.User
-	}
-
-	if !c.isAllowed(checkUser) {
-		log.Printf("whatsapp: blocked %q (not in allow list)", checkUser)
+	if !c.isAllowed(senderPhone(evt.Info.MessageSource)) {
+		log.Printf("whatsapp: blocked %q (not in allow list)", senderPhone(evt.Info.MessageSource))
 		return
 	}
 
