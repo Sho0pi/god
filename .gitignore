@@ -27,6 +27,17 @@ go.work.sum
 # env file
 .env
 
+# user config (copy from god.example.yaml)
+god.yaml
+# config-tool backup of the user config (may contain private admin/allow lists)
+god.yaml.bak
+
+# WhatsApp session data
+data/
+
+# built binary
+/god
+
 # Editor/IDE
 # .idea/
 # .vscode/
