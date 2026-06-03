@@ -104,25 +104,6 @@ func (s *stateStore) RemoveAllow(_ context.Context, _, _ string) error        { 
 func (s *stateStore) ListAllow(_ context.Context, _ string) ([]string, error) { return nil, nil }
 func (s *stateStore) Close() error                                            { return nil }
 
-// --- tracking LLM (records which model was used) ---
-
-type trackingLLM struct {
-	mu       sync.Mutex
-	model    string
-	response *llm.Response
-	calls    []string // system prompts recorded per call
-}
-
-func (t *trackingLLM) Chat(ctx context.Context, h []llm.Message, tools []tool.Tool) (*llm.Response, error) {
-	return t.ChatWithSystem(ctx, "", h, tools)
-}
-func (t *trackingLLM) ChatWithSystem(_ context.Context, system string, _ []llm.Message, _ []tool.Tool) (*llm.Response, error) {
-	t.mu.Lock()
-	t.calls = append(t.calls, system)
-	t.mu.Unlock()
-	return t.response, nil
-}
-
 // --- helpers ---
 
 func newAgent(t *testing.T, lm llm.LLM, st *stateStore, opts agent.Options) (*mockConnector, *agent.Agent) {

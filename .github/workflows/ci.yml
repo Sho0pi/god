@@ -34,6 +34,9 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      # v7 installs golangci-lint v2 (built with a recent Go toolchain); v6
+      # pulls the latest v1, which is built with go1.24 and rejects our go1.25
+      # target. The .golangci.yml uses the v2 schema.
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: latest

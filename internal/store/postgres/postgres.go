@@ -28,7 +28,7 @@ func New(ctx context.Context, url string) (*Store, error) {
 		return nil, fmt.Errorf("bootstrap connect: %w", err)
 	}
 	_, err = bootstrap.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
-	bootstrap.Close(ctx)
+	_ = bootstrap.Close(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create vector extension: %w", err)
 	}

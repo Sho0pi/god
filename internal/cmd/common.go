@@ -161,11 +161,11 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 	if err != nil {
 		log.Fatalf("gemini init: %v", err)
 	}
-	defer defaultLLM.Close()
+	defer func() { _ = defaultLLM.Close() }()
 
 	s := a.buildStore(ctx)
 	if s != nil {
-		defer s.Close()
+		defer func() { _ = s.Close() }()
 		// If the connector supports a runtime allow source, feed it store-backed
 		// allow-list entries (managed via the /allow admin command).
 		if as, ok := c.(interface{ SetAllowSource(func() []string) }); ok {
@@ -185,11 +185,6 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 	var e embed.Embedder
 	if s != nil {
 		e = buildEmbedder(ctx, geminiKey)
-	}
-
-	topK := cfg.Memory.TopK
-	if topK == 0 {
-		topK = 5
 	}
 
 	pool := a.buildLLMPool(ctx, geminiKey, defaultLLM)

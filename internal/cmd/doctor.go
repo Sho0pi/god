@@ -175,7 +175,7 @@ func checkPostgres(cfg *config.Config) check {
 			"run: docker-compose up -d",
 		)
 	}
-	conn.Close()
+	_ = conn.Close()
 	return pass(fmt.Sprintf("%s reachable at %s:%s", name, host, port))
 }
 
