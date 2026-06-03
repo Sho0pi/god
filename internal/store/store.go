@@ -2,28 +2,42 @@ package store
 
 import "context"
 
-// Store is the persistence layer for soul assignments and long-term memories.
-type Store interface {
-	// Soul assignments
+// SoulStore persists per-user soul assignments.
+type SoulStore interface {
 	AssignSoul(ctx context.Context, connector, userID, soulName string) error
 	GetSoul(ctx context.Context, connector, userID string) (string, error)
 	DeleteSoul(ctx context.Context, connector, userID string) error
+}
 
-	// Role assignments
+// RoleStore persists per-user role assignments.
+type RoleStore interface {
 	AssignRole(ctx context.Context, connector, userID, roleName string) error
 	GetRole(ctx context.Context, connector, userID string) (string, error)
 	DeleteRole(ctx context.Context, connector, userID string) error
+}
 
-	// Long-term memory
+// MemoryStore persists long-term memories as embedded facts.
+type MemoryStore interface {
 	SaveMemory(ctx context.Context, connector, userID, fact string, embedding []float32) error
 	SearchMemories(ctx context.Context, connector, userID string, queryEmbedding []float32, limit int) ([]string, error)
 	DeleteMemories(ctx context.Context, connector, userID string) error
+}
 
-	// Allow list (per connector). Numbers are stored as caller-supplied strings;
-	// the connector is responsible for normalization.
+// AllowStore persists the per-connector allow list. Numbers are stored as
+// caller-supplied strings; the connector is responsible for normalization.
+type AllowStore interface {
 	AddAllow(ctx context.Context, connector, number string) error
 	RemoveAllow(ctx context.Context, connector, number string) error
 	ListAllow(ctx context.Context, connector string) ([]string, error)
+}
+
+// Store is the full persistence layer. Consumers that need only one concern
+// should depend on the narrower interface above (SoulStore, MemoryStore, ...).
+type Store interface {
+	SoulStore
+	RoleStore
+	MemoryStore
+	AllowStore
 
 	Close() error
 }

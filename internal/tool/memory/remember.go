@@ -20,10 +20,10 @@ type UserInfo struct {
 // RememberTool saves a fact about the user into long-term memory.
 type RememberTool struct {
 	embedder embed.Embedder
-	store    store.Store
+	store    store.MemoryStore
 }
 
-func NewRememberTool(e embed.Embedder, s store.Store) *RememberTool {
+func NewRememberTool(e embed.Embedder, s store.MemoryStore) *RememberTool {
 	return &RememberTool{embedder: e, store: s}
 }
 

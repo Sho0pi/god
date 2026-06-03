@@ -13,11 +13,11 @@ import (
 // SetSoulTool assigns a soul to the current user, persisted in the store.
 // The next message from that user will use the assigned soul.
 type SetSoulTool struct {
-	store      store.Store
+	store      store.SoulStore
 	knownSouls []string // valid soul names from config
 }
 
-func NewSetSoulTool(s store.Store, knownSouls []string) *SetSoulTool {
+func NewSetSoulTool(s store.SoulStore, knownSouls []string) *SetSoulTool {
 	return &SetSoulTool{store: s, knownSouls: knownSouls}
 }
 
