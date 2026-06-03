@@ -19,7 +19,8 @@ var cliCmd = &cobra.Command{
   god cli --msg "hello"                # send one message, print reply, exit
   god cli --msg "hi" --user alice      # send as user 'alice'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !cfg.Connectors.CLI.Enabled {
+		a := appFrom(cmd)
+		if !a.cfg.Connectors.CLI.Enabled {
 			return fmt.Errorf("cli connector is disabled in config")
 		}
 
@@ -35,7 +36,7 @@ var cliCmd = &cobra.Command{
 			OnDone:  stop, // one-shot: cancel signal ctx after reply received
 		})
 
-		runAgent(ctx, conn)
+		a.runAgent(ctx, conn)
 		return nil
 	},
 }

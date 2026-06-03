@@ -16,20 +16,21 @@ var whatsappCmd = &cobra.Command{
 	Use:   "whatsapp",
 	Short: "Start the WhatsApp connector",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !cfg.Connectors.WhatsApp.Enabled {
+		a := appFrom(cmd)
+		if !a.cfg.Connectors.WhatsApp.Enabled {
 			return fmt.Errorf("whatsapp connector is disabled in config")
 		}
 
 		storePath, _ := cmd.Flags().GetString("store")
 		if storePath == "" {
-			storePath = cfg.Connectors.WhatsApp.StorePath
+			storePath = a.cfg.Connectors.WhatsApp.StorePath
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		conn := whatsapp.New(storePath, loader.Supplier())
-		runAgent(ctx, conn)
+		conn := whatsapp.New(storePath, a.loader.Supplier())
+		a.runAgent(ctx, conn)
 		return nil
 	},
 }

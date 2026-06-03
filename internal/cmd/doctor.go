@@ -20,22 +20,26 @@ var doctorCmd = &cobra.Command{
 	// Load config best-effort: doctor must still work if the config is broken or
 	// missing, but when it parses we want checks (exec, postgres, whatsapp) to see it.
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if l, err := config.Load(cfgFile); err == nil {
-			loader = l
-			cfg = l.Cfg
+		path, _ := cmd.Flags().GetString("config")
+		a := &app{cfgFile: path}
+		if l, err := config.Load(path); err == nil {
+			a.loader = l
+			a.cfg = l.Cfg
 		} else {
 			fmt.Printf("  !  config not loaded (%v) — running checks with defaults\n\n", err)
 		}
+		withApp(cmd, a)
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := appFrom(cmd).cfg
 		checks := []check{
 			checkGeminiKey(),
 			checkDDGSearch(),
 			checkDocker(),
-			checkExecImage(),
-			checkPostgres(),
-			checkWhatsAppSession(),
+			checkExecImage(cfg),
+			checkPostgres(cfg),
+			checkWhatsAppSession(cfg),
 		}
 
 		allOK := true
@@ -114,7 +118,7 @@ func checkDocker() check {
 	return pass(fmt.Sprintf("%s daemon running (v%s)", name, strings.TrimSpace(string(out))))
 }
 
-func checkExecImage() check {
+func checkExecImage(cfg *config.Config) check {
 	name := "exec sandbox image"
 	if cfg == nil || !cfg.Tools.Exec.Enabled {
 		return pass(name + " (exec tool disabled)")
@@ -135,7 +139,7 @@ func checkExecImage() check {
 	return pass(fmt.Sprintf("%s %q present", name, image))
 }
 
-func checkPostgres() check {
+func checkPostgres(cfg *config.Config) check {
 	name := "PostgreSQL (pgvector)"
 
 	url := os.Getenv("DATABASE_URL")
@@ -175,7 +179,7 @@ func checkPostgres() check {
 	return pass(fmt.Sprintf("%s reachable at %s:%s", name, host, port))
 }
 
-func checkWhatsAppSession() check {
+func checkWhatsAppSession(cfg *config.Config) check {
 	name := "WhatsApp session"
 
 	storePath := "data/whatsapp"

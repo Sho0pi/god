@@ -25,10 +25,10 @@ import (
 	"github.com/sho0pi/god/internal/tool/websearch"
 )
 
-func buildStore(ctx context.Context) store.Store {
+func (a *app) buildStore(ctx context.Context) store.Store {
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {
-		url = cfg.Database.URL
+		url = a.cfg.Database.URL
 	}
 	if url == "" {
 		log.Println("store: DATABASE_URL not set — memory disabled")
@@ -52,7 +52,7 @@ func buildEmbedder(ctx context.Context, apiKey string) embed.Embedder {
 	return e
 }
 
-func buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *llm.Pool {
+func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *llm.Pool {
 	factory := func(ctx context.Context, pcfg llm.ProviderConfig) (llm.LLM, error) {
 		switch pcfg.Provider {
 		case "gemini", "google":
@@ -67,7 +67,7 @@ func buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *llm.Pool 
 	}
 	pool := llm.NewPool(factory, def)
 	// Pre-warm role LLMs at startup.
-	for name, role := range cfg.Roles {
+	for name, role := range a.cfg.Roles {
 		if role.LLM.Provider == "" || role.LLM.Model == "" {
 			continue
 		}
@@ -80,7 +80,8 @@ func buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *llm.Pool 
 	return pool
 }
 
-func buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
+func (a *app) buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
+	cfg := a.cfg
 	r := tool.NewRegistry()
 
 	r.Register(calculator.New())
@@ -108,7 +109,7 @@ func buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
 	}
 
 	if cfg.Tools.Config.Enabled {
-		path := cfgFile
+		path := a.cfgFile
 		if path == "" {
 			path = config.DefaultPath
 		}
@@ -141,7 +142,8 @@ func buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
 	return r
 }
 
-func runAgent(ctx context.Context, c connector.Connector) {
+func (a *app) runAgent(ctx context.Context, c connector.Connector) {
+	cfg := a.cfg
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	if geminiKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
@@ -161,7 +163,7 @@ func runAgent(ctx context.Context, c connector.Connector) {
 	}
 	defer defaultLLM.Close()
 
-	s := buildStore(ctx)
+	s := a.buildStore(ctx)
 	if s != nil {
 		defer s.Close()
 		// If the connector supports a runtime allow source, feed it store-backed
@@ -190,17 +192,17 @@ func runAgent(ctx context.Context, c connector.Connector) {
 		topK = 5
 	}
 
-	pool := buildLLMPool(ctx, geminiKey, defaultLLM)
-	supply := loader.Supplier()
-	loader.Watch(nil) // keeps loader's internal cfg updated; supplier reads it
+	pool := a.buildLLMPool(ctx, geminiKey, defaultLLM)
+	supply := a.loader.Supplier()
+	a.loader.Watch(nil) // keeps loader's internal cfg updated; supplier reads it
 
-	a := agent.New(c, defaultLLM, buildRegistry(s, e), e, s, agent.Options{
+	ag := agent.New(c, defaultLLM, a.buildRegistry(s, e), e, s, agent.Options{
 		MaxTurns:          cfg.Memory.MaxTurns,
 		InactivityTimeout: cfg.Memory.InactivityTimeout,
 		ConfigFn:          supply,
 		LLMPool:           pool,
 	})
-	if err := a.Run(ctx); err != nil {
+	if err := ag.Run(ctx); err != nil {
 		log.Printf("agent stopped: %v", err)
 	}
 }
