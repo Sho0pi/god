@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -12,8 +13,7 @@ import (
 	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
-	"github.com/sho0pi/god/internal/tool"
-	toolsoul "github.com/sho0pi/god/internal/tool/soul"
+	tools "github.com/sho0pi/god/internal/tools"
 )
 
 // --- stateful mock store ---
@@ -110,7 +110,7 @@ func newAgent(t *testing.T, lm llm.LLM, st *stateStore, opts agent.Options) (*mo
 	t.Helper()
 	conn := newMockConnector()
 	opts.Commands = nil // use builtins
-	a := agent.New(conn, lm, tool.NewRegistry(), &mockEmbedder{}, st, opts)
+	a := agent.New(conn, lm, tools.NewRegistry(), &mockEmbedder{}, st, opts)
 	return conn, a
 }
 
@@ -181,8 +181,8 @@ func TestIntegration_SoulOnboarding(t *testing.T) {
 	}
 
 	// Register set_soul tool
-	r := tool.NewRegistry()
-	r.Register(toolsoul.NewSetSoulTool(st, []string{"human", "caveman"}))
+	r := tools.NewRegistry()
+	r.Register(&fakeSetSoulTool{store: st})
 
 	conn := newMockConnector()
 	a := agent.New(conn, seqLLM, r, &mockEmbedder{}, st, agent.Options{
@@ -425,21 +425,21 @@ func TestIntegration_MemoryInjectedInSystemPrompt(t *testing.T) {
 func TestIntegration_RoleToolFiltering(t *testing.T) {
 	st := newStateStore()
 
-	r := tool.NewRegistry()
+	r := tools.NewRegistry()
 	r.Register(&fakeNamedTool{name: "calculator"})
 	r.Register(&fakeNamedTool{name: "web_search"})
 	r.Register(&fakeNamedTool{name: "remember"})
 
 	conn := newMockConnector()
 
-	toolsPassedToLLM := make([][]tool.Tool, 0)
+	toolsPassedToLLM := make([][]tools.Tool, 0)
 	var toolsMu sync.Mutex
 
 	wrapped := &toolInterceptLLM{
 		inner: &capturingLLM{fn: func(_ string, _ []llm.Message) (*llm.Response, error) {
 			return &llm.Response{Text: "done"}, nil
 		}},
-		onCall: func(tools []tool.Tool) {
+		onCall: func(tools []tools.Tool) {
 			toolsMu.Lock()
 			toolsPassedToLLM = append(toolsPassedToLLM, tools)
 			toolsMu.Unlock()
@@ -512,7 +512,7 @@ func TestIntegration_RoleLLMRouting(t *testing.T) {
 	}, defaultLLM)
 
 	conn := newMockConnector()
-	a := agent.New(conn, defaultLLM, tool.NewRegistry(), &mockEmbedder{}, st, agent.Options{
+	a := agent.New(conn, defaultLLM, tools.NewRegistry(), &mockEmbedder{}, st, agent.Options{
 		Roles: map[string]config.RoleConfig{
 			"admin": {LLM: config.LLMProviderConfig{Provider: "test", Model: "admin-model"}},
 			"user":  {LLM: config.LLMProviderConfig{Provider: "test", Model: "user-model"}},
@@ -551,7 +551,7 @@ func TestIntegration_RoleLLMRouting(t *testing.T) {
 func TestIntegration_MemoryRememberedThenReset(t *testing.T) {
 	st := newStateStore()
 
-	r := tool.NewRegistry()
+	r := tools.NewRegistry()
 	r.Register(&fakeRememberTool{store: st})
 
 	seqLLM := &sequenceLLM{responses: []*llm.Response{
@@ -646,7 +646,7 @@ func TestIntegration_MultiUserIsolation(t *testing.T) {
 	}
 
 	conn := newMockConnector()
-	a := agent.New(conn, capLLM, tool.NewRegistry(), &mockEmbedder{}, st, agent.Options{
+	a := agent.New(conn, capLLM, tools.NewRegistry(), &mockEmbedder{}, st, agent.Options{
 		Souls: map[string]config.SoulConfig{
 			"human":   {Prompt: "HUMAN_PROMPT"},
 			"caveman": {Prompt: "CAVEMAN_PROMPT"},
@@ -720,11 +720,11 @@ type fakeNamedTool struct{ name string }
 
 func (f *fakeNamedTool) Name() string        { return f.name }
 func (f *fakeNamedTool) Description() string { return f.name }
-func (f *fakeNamedTool) Schema() *tool.Schema {
-	return &tool.Schema{Properties: map[string]*tool.Property{}}
+func (f *fakeNamedTool) Schema() *tools.Schema {
+	return tools.Object(map[string]*tools.Property{})
 }
-func (f *fakeNamedTool) Execute(_ context.Context, _ map[string]any) (string, error) {
-	return "ok", nil
+func (f *fakeNamedTool) Execute(_ context.Context, _ json.RawMessage) (tools.Result, error) {
+	return tools.Result{Content: "ok"}, nil
 }
 
 // fakeRememberTool saves facts to a stateStore (simulates real remember tool behaviour).
@@ -732,32 +732,64 @@ type fakeRememberTool struct{ store *stateStore }
 
 func (f *fakeRememberTool) Name() string        { return "remember" }
 func (f *fakeRememberTool) Description() string { return "remember a fact" }
-func (f *fakeRememberTool) Schema() *tool.Schema {
-	return &tool.Schema{
-		Properties: map[string]*tool.Property{
-			"fact": {Type: "string", Description: "fact to remember"},
-		},
-		Required: []string{"fact"},
+func (f *fakeRememberTool) Schema() *tools.Schema {
+	return tools.Object(map[string]*tools.Property{
+		"fact": {Type: "string", Description: "fact to remember"},
+	}, "fact")
+}
+func (f *fakeRememberTool) Execute(_ context.Context, raw json.RawMessage) (tools.Result, error) {
+	var a struct {
+		Fact string `json:"fact"`
+	}
+	_ = json.Unmarshal(raw, &a)
+	f.store.mu.Lock()
+	f.store.facts["test:u1"] = append(f.store.facts["test:u1"], a.Fact)
+	f.store.mu.Unlock()
+	return tools.Result{Content: "Remembered: " + a.Fact}, nil
+}
+
+// fakeSetSoulTool is a new-interface stand-in for the legacy set_soul tool: it
+// reads the user from context and assigns a soul in the store.
+type fakeSetSoulTool struct {
+	store interface {
+		AssignSoul(ctx context.Context, connector, userID, soul string) error
 	}
 }
-func (f *fakeRememberTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	fact, _ := args["fact"].(string)
-	f.store.mu.Lock()
-	f.store.facts["test:u1"] = append(f.store.facts["test:u1"], fact)
-	f.store.mu.Unlock()
-	return "Remembered: " + fact, nil
+
+func (f *fakeSetSoulTool) Name() string        { return "set_soul" }
+func (f *fakeSetSoulTool) Description() string { return "assign a soul to the user" }
+func (f *fakeSetSoulTool) Schema() *tools.Schema {
+	return tools.Object(map[string]*tools.Property{
+		"soul": {Type: "string", Description: "soul name"},
+	}, "soul")
+}
+func (f *fakeSetSoulTool) Execute(ctx context.Context, raw json.RawMessage) (tools.Result, error) {
+	var a struct {
+		Soul string `json:"soul"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil || a.Soul == "" {
+		return tools.Result{}, fmt.Errorf("soul is required")
+	}
+	user, ok := tools.UserFrom(ctx)
+	if !ok {
+		return tools.Result{}, fmt.Errorf("no user context")
+	}
+	if err := f.store.AssignSoul(ctx, user.Connector, user.UserID, a.Soul); err != nil {
+		return tools.Result{}, err
+	}
+	return tools.Result{Content: "Soul set to " + a.Soul}, nil
 }
 
 // toolInterceptLLM wraps an LLM and calls onCall with the tools list before delegating.
 type toolInterceptLLM struct {
 	inner  llm.LLM
-	onCall func(tools []tool.Tool)
+	onCall func(tools []tools.Tool)
 }
 
-func (t *toolInterceptLLM) Chat(ctx context.Context, h []llm.Message, tools []tool.Tool) (*llm.Response, error) {
+func (t *toolInterceptLLM) Chat(ctx context.Context, h []llm.Message, tools []tools.Tool) (*llm.Response, error) {
 	return t.ChatWithSystem(ctx, "", h, tools)
 }
-func (t *toolInterceptLLM) ChatWithSystem(ctx context.Context, s string, h []llm.Message, tools []tool.Tool) (*llm.Response, error) {
+func (t *toolInterceptLLM) ChatWithSystem(ctx context.Context, s string, h []llm.Message, tools []tools.Tool) (*llm.Response, error) {
 	t.onCall(tools)
 	return t.inner.ChatWithSystem(ctx, s, h, tools)
 }

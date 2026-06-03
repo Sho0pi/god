@@ -15,15 +15,27 @@ import (
 	llmgemini "github.com/sho0pi/god/internal/llm/gemini"
 	"github.com/sho0pi/god/internal/store"
 	"github.com/sho0pi/god/internal/store/postgres"
-	"github.com/sho0pi/god/internal/tool"
-	"github.com/sho0pi/god/internal/tool/calculator"
-	"github.com/sho0pi/god/internal/tool/cfgtool"
-	toolexec "github.com/sho0pi/god/internal/tool/exec"
-	"github.com/sho0pi/god/internal/tool/memory"
-	toolplaces "github.com/sho0pi/god/internal/tool/places"
-	toolsoul "github.com/sho0pi/god/internal/tool/soul"
-	"github.com/sho0pi/god/internal/tool/websearch"
+	toolpkg "github.com/sho0pi/god/internal/tools"
+	"github.com/sho0pi/god/internal/tools/configtool"
+	"github.com/sho0pi/god/internal/tools/fs"
+	"github.com/sho0pi/god/internal/tools/memory"
+	toolsoul "github.com/sho0pi/god/internal/tools/soul"
+	"github.com/sho0pi/god/internal/tools/webextract"
+	"github.com/sho0pi/god/internal/tools/websearch"
 )
+
+// llmSummarizer adapts an llm.LLM to webextract.Summarizer so the web_extract
+// tool can shrink large pages with the model. Kept here (not in webextract) so
+// the tool package has no dependency on the llm package.
+type llmSummarizer struct{ l llm.LLM }
+
+func (s llmSummarizer) Summarize(ctx context.Context, content, instruction string) (string, error) {
+	resp, err := s.l.ChatWithSystem(ctx, instruction, []llm.Message{{Role: "user", Text: content}}, nil)
+	if err != nil {
+		return "", err
+	}
+	return resp.Text, nil
+}
 
 func (a *app) buildStore(ctx context.Context) store.Store {
 	url := os.Getenv("DATABASE_URL")
@@ -80,19 +92,24 @@ func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *
 	return pool
 }
 
-func (a *app) buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
-	cfg := a.cfg
-	r := tool.NewRegistry()
+// buildRegistry registers the provider-neutral tools (internal/tools). For now
+// only the web tools are wired; the legacy internal/tool/* tools are kept in the
+// tree but intentionally unregistered until they are migrated to the new Tool
+// interface. def is the default LLM, used to summarize large web_extract pages.
+func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolpkg.Registry {
+	r := toolpkg.NewRegistry()
 
-	r.Register(calculator.New())
-	log.Println("tool: calculator enabled")
+	r.Register(websearch.New(nil))
+	log.Println("tool: web_search enabled (requires ddg-search CLI on PATH)")
 
-	r.Register(websearch.New())
-	log.Println("tool: web_search enabled")
+	if s != nil && e != nil {
+		r.Register(memory.NewRememberTool(e, s))
+		log.Println("tool: remember enabled (long-term memory)")
+	}
 
 	if s != nil {
-		knownSouls := make([]string, 0, len(cfg.Souls))
-		for name := range cfg.Souls {
+		knownSouls := make([]string, 0, len(a.cfg.Souls))
+		for name := range a.cfg.Souls {
 			if name != "god" {
 				knownSouls = append(knownSouls, name)
 			}
@@ -101,42 +118,51 @@ func (a *app) buildRegistry(s store.Store, e embed.Embedder) *tool.Registry {
 		log.Println("tool: set_soul enabled")
 	}
 
-	if cfg.Tools.Places.Enabled {
-		if key := os.Getenv("GOOGLE_PLACES_API_KEY"); key != "" {
-			r.Register(toolplaces.NewSearchTool(key))
-			log.Println("tool: search_places enabled")
-		}
-	}
-
-	if cfg.Tools.Config.Enabled {
+	if a.cfg.Tools.Config.Enabled {
 		path := a.cfgFile
 		if path == "" {
 			path = config.DefaultPath
 		}
-		r.Register(cfgtool.New(path))
-		log.Println("tool: config enabled (god edits god.yaml — grant to admin role only)")
+		r.Register(configtool.New(path))
+		log.Println("tool: config enabled (god edits god.yaml — grant to admin role only; approval recommended)")
 	}
 
-	if cfg.Tools.Exec.Enabled {
-		t, err := toolexec.New(toolexec.Config{
-			Image:     cfg.Tools.Exec.Image,
-			Timeout:   cfg.Tools.Exec.Timeout,
-			Memory:    cfg.Tools.Exec.Memory,
-			CPUs:      cfg.Tools.Exec.CPUs,
-			PidsLimit: cfg.Tools.Exec.PidsLimit,
-			Network:   cfg.Tools.Exec.Network,
+	if a.cfg.Tools.WebExtract.Enabled {
+		supply := a.loader.Supplier()
+		cfgFn := func() webextract.Config {
+			c := supply().Tools.WebExtract
+			return webextract.Config{
+				MaxChars:          c.MaxChars,
+				Summarize:         c.Summarize,
+				SummarizeMinChars: c.SummarizeMinChars,
+				Timeout:           c.Timeout,
+				BlockPrivate:      c.BlockPrivate,
+			}
+		}
+		var summarizer webextract.Summarizer
+		if def != nil {
+			summarizer = llmSummarizer{l: def}
+		}
+		r.Register(webextract.New(cfgFn, summarizer))
+		log.Println("tool: web_extract enabled (SSRF guard on; large pages summarized via default LLM)")
+	}
+
+	if a.cfg.Tools.FS.Enabled {
+		ws, err := fs.New(fs.Config{
+			Root:         a.cfg.Tools.FS.Root,
+			MaxReadBytes: a.cfg.Tools.FS.MaxReadBytes,
 		})
 		if err != nil {
-			log.Printf("tool: exec disabled: %v", err)
+			log.Printf("tool: read_file disabled: %v", err)
 		} else {
-			r.Register(t)
-			log.Println("tool: exec enabled (sandboxed docker — grant to trusted roles only)")
+			r.Register(fs.NewReadFileTool(ws))
+			r.Register(fs.NewListDirTool(ws))
+			r.Register(fs.NewGlobTool(ws, nil))
+			r.Register(fs.NewGrepTool(ws, nil))
+			r.Register(fs.NewWriteFileTool(ws))
+			r.Register(fs.NewEditFileTool(ws))
+			log.Printf("tool: read_file, list_dir, glob, grep, write_file, edit_file enabled (workspace root: %s — WRITES are ungated)", ws.Root())
 		}
-	}
-
-	if s != nil && e != nil {
-		r.Register(memory.NewRememberTool(e, s))
-		log.Println("tool: remember enabled")
 	}
 
 	return r
@@ -191,7 +217,7 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 	supply := a.loader.Supplier()
 	a.loader.Watch(nil) // keeps loader's internal cfg updated; supplier reads it
 
-	ag := agent.New(c, defaultLLM, a.buildRegistry(s, e), e, s, agent.Options{
+	ag := agent.New(c, defaultLLM, a.buildRegistry(defaultLLM, s, e), e, s, agent.Options{
 		MaxTurns:          cfg.Memory.MaxTurns,
 		InactivityTimeout: cfg.Memory.InactivityTimeout,
 		ConfigFn:          supply,

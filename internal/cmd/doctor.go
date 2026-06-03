@@ -37,7 +37,6 @@ var doctorCmd = &cobra.Command{
 			checkGeminiKey(),
 			checkDDGSearch(),
 			checkDocker(),
-			checkExecImage(cfg),
 			checkPostgres(cfg),
 			checkWhatsAppSession(cfg),
 		}
@@ -116,27 +115,6 @@ func checkDocker() check {
 		return fail(name+" daemon not running", "run: open -a Docker  (or: sudo systemctl start docker)")
 	}
 	return pass(fmt.Sprintf("%s daemon running (v%s)", name, strings.TrimSpace(string(out))))
-}
-
-func checkExecImage(cfg *config.Config) check {
-	name := "exec sandbox image"
-	if cfg == nil || !cfg.Tools.Exec.Enabled {
-		return pass(name + " (exec tool disabled)")
-	}
-	image := cfg.Tools.Exec.Image
-	if image == "" {
-		image = "alpine:3.20"
-	}
-	if _, err := exec.LookPath("docker"); err != nil {
-		return fail(name+" — docker not found", "exec tool needs Docker; install it or set tools.exec.enabled: false")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "docker", "image", "inspect", image, "--format", "{{.Id}}").Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
-		return fail(fmt.Sprintf("%s %q not pulled", name, image), "run: docker pull "+image)
-	}
-	return pass(fmt.Sprintf("%s %q present", name, image))
 }
 
 func checkPostgres(cfg *config.Config) check {

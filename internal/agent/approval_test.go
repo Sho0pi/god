@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -10,7 +11,7 @@ import (
 	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
-	"github.com/sho0pi/god/internal/tool"
+	tools "github.com/sho0pi/god/internal/tools"
 )
 
 // recordTool counts executions so tests can assert it ran only after approval.
@@ -19,14 +20,14 @@ type recordTool struct {
 	calls int
 }
 
-func (t *recordTool) Name() string         { return "testtool" }
-func (t *recordTool) Description() string  { return "test tool" }
-func (t *recordTool) Schema() *tool.Schema { return &tool.Schema{} }
-func (t *recordTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+func (t *recordTool) Name() string          { return "testtool" }
+func (t *recordTool) Description() string   { return "test tool" }
+func (t *recordTool) Schema() *tools.Schema { return &tools.Schema{} }
+func (t *recordTool) Execute(_ context.Context, _ json.RawMessage) (tools.Result, error) {
 	t.mu.Lock()
 	t.calls++
 	t.mu.Unlock()
-	return "did the thing", nil
+	return tools.Result{Content: "did the thing"}, nil
 }
 func (t *recordTool) count() int {
 	t.mu.Lock()
@@ -46,7 +47,7 @@ func approvalFixture(t *testing.T, seq *sequenceLLM) (*mockConnector, *recordToo
 	}
 	conn := newMockConnector()
 	rt := &recordTool{}
-	reg := tool.NewRegistry()
+	reg := tools.NewRegistry()
 	reg.Register(rt)
 
 	a := agent.New(conn, seq, reg, nil, nil, agent.Options{

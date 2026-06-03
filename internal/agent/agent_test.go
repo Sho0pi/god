@@ -10,7 +10,7 @@ import (
 	"github.com/sho0pi/god/internal/agent"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
-	"github.com/sho0pi/god/internal/tool"
+	tools "github.com/sho0pi/god/internal/tools"
 )
 
 // --- mock LLM ---
@@ -23,11 +23,11 @@ type mockLLM struct {
 	systemCalls []string
 }
 
-func (m *mockLLM) Chat(ctx context.Context, history []llm.Message, tools []tool.Tool) (*llm.Response, error) {
+func (m *mockLLM) Chat(ctx context.Context, history []llm.Message, tools []tools.Tool) (*llm.Response, error) {
 	return m.ChatWithSystem(ctx, "", history, tools)
 }
 
-func (m *mockLLM) ChatWithSystem(_ context.Context, system string, history []llm.Message, _ []tool.Tool) (*llm.Response, error) {
+func (m *mockLLM) ChatWithSystem(_ context.Context, system string, history []llm.Message, _ []tools.Tool) (*llm.Response, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = append(m.calls, history...)
@@ -126,7 +126,7 @@ func (e *mockEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 func TestAgent_RespondsToMessage(t *testing.T) {
 	lm := &mockLLM{response: &llm.Response{Text: "hello back"}}
 	conn := newMockConnector()
-	registry := tool.NewRegistry()
+	registry := tools.NewRegistry()
 
 	a := agent.New(conn, lm, registry, nil, nil, agent.Options{})
 
@@ -176,7 +176,7 @@ func TestAgent_RespondsToMessage(t *testing.T) {
 func TestAgent_HistoryIsolatedPerUser(t *testing.T) {
 	lm := &mockLLM{response: &llm.Response{Text: "ok"}}
 	conn := newMockConnector()
-	registry := tool.NewRegistry()
+	registry := tools.NewRegistry()
 
 	a := agent.New(conn, lm, registry, nil, nil, agent.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -212,7 +212,7 @@ func TestAgent_HistoryIsolatedPerUser(t *testing.T) {
 
 func TestAgent_ToolCallLoop(t *testing.T) {
 	conn := newMockConnector()
-	registry := tool.NewRegistry()
+	registry := tools.NewRegistry()
 
 	responses := []*llm.Response{
 		{ToolCall: &llm.ToolCall{Name: "fake_tool", Args: map[string]any{}}},
@@ -276,7 +276,7 @@ func TestAgent_SlidingWindow(t *testing.T) {
 
 	conn := newMockConnector()
 	// maxTurns=2 → keeps last 4 messages (2 user + 2 model)
-	a := agent.New(conn, captureLLM, tool.NewRegistry(), nil, nil, agent.Options{MaxTurns: 2})
+	a := agent.New(conn, captureLLM, tools.NewRegistry(), nil, nil, agent.Options{MaxTurns: 2})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -324,7 +324,7 @@ func TestAgent_InactivityTimer(t *testing.T) {
 	embedder := &mockEmbedder{}
 	conn := newMockConnector()
 
-	a := agent.New(conn, seqLLM, tool.NewRegistry(), embedder, store, agent.Options{
+	a := agent.New(conn, seqLLM, tools.NewRegistry(), embedder, store, agent.Options{
 		InactivityTimeout: 50 * time.Millisecond,
 	})
 
@@ -377,7 +377,7 @@ func TestAgent_InactivityTimerResets(t *testing.T) {
 	conn := newMockConnector()
 
 	timeout := 80 * time.Millisecond
-	a := agent.New(conn, seqLLM, tool.NewRegistry(), embedder, store, agent.Options{
+	a := agent.New(conn, seqLLM, tools.NewRegistry(), embedder, store, agent.Options{
 		InactivityTimeout: timeout,
 	})
 
@@ -415,7 +415,7 @@ func TestAgent_ResetCommand(t *testing.T) {
 	lm := &mockLLM{response: &llm.Response{Text: "ok"}}
 	conn := newMockConnector()
 
-	a := agent.New(conn, lm, tool.NewRegistry(), nil, nil, agent.Options{})
+	a := agent.New(conn, lm, tools.NewRegistry(), nil, nil, agent.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	go a.Run(ctx)
@@ -472,11 +472,11 @@ type capturingLLM struct {
 	fn func(system string, history []llm.Message) (*llm.Response, error)
 }
 
-func (c *capturingLLM) Chat(ctx context.Context, history []llm.Message, tools []tool.Tool) (*llm.Response, error) {
+func (c *capturingLLM) Chat(ctx context.Context, history []llm.Message, tools []tools.Tool) (*llm.Response, error) {
 	return c.ChatWithSystem(ctx, "", history, tools)
 }
 
-func (c *capturingLLM) ChatWithSystem(_ context.Context, system string, history []llm.Message, _ []tool.Tool) (*llm.Response, error) {
+func (c *capturingLLM) ChatWithSystem(_ context.Context, system string, history []llm.Message, _ []tools.Tool) (*llm.Response, error) {
 	return c.fn(system, history)
 }
 
@@ -487,11 +487,11 @@ type sequenceLLM struct {
 	idx       int
 }
 
-func (s *sequenceLLM) Chat(ctx context.Context, history []llm.Message, tools []tool.Tool) (*llm.Response, error) {
+func (s *sequenceLLM) Chat(ctx context.Context, history []llm.Message, tools []tools.Tool) (*llm.Response, error) {
 	return s.ChatWithSystem(ctx, "", history, tools)
 }
 
-func (s *sequenceLLM) ChatWithSystem(_ context.Context, _ string, _ []llm.Message, _ []tool.Tool) (*llm.Response, error) {
+func (s *sequenceLLM) ChatWithSystem(_ context.Context, _ string, _ []llm.Message, _ []tools.Tool) (*llm.Response, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.idx >= len(s.responses) {

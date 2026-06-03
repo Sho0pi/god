@@ -80,26 +80,34 @@ type GroupTriggerConfig struct {
 }
 
 type ToolsConfig struct {
-	Places   ToolConfig     `mapstructure:"places"`
-	Exec     ExecToolConfig `mapstructure:"exec"`
-	Config   ToolConfig     `mapstructure:"config"`   // lets god edit god.yaml (admin only)
-	Approval []string       `mapstructure:"approval"` // tool names that require admin /approve before running
+	Config     ToolConfig           `mapstructure:"config"`      // lets god edit god.yaml (admin only)
+	WebExtract WebExtractToolConfig `mapstructure:"web_extract"` // fetch + read web pages
+	FS         FSToolConfig         `mapstructure:"fs"`          // filesystem tools (read_file)
+	Approval   []string             `mapstructure:"approval"`    // tool names that require admin /approve before running
+}
+
+// FSToolConfig configures the filesystem tools (read_file). Every path the model
+// passes is untrusted, so access is contained to Root. Disabled by default.
+type FSToolConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	Root         string `mapstructure:"root"`           // the ONLY dir tools may touch (empty → working dir)
+	MaxReadBytes int64  `mapstructure:"max_read_bytes"` // per-read byte cap
+}
+
+// WebExtractToolConfig configures the web_extract tool, which fetches web pages
+// and returns their content as markdown (optionally LLM-summarized). Every URL
+// is untrusted, so BlockPrivate (SSRF guard) should stay true in production.
+type WebExtractToolConfig struct {
+	Enabled           bool          `mapstructure:"enabled"`
+	MaxChars          int           `mapstructure:"max_chars"`           // truncate each page to this many runes
+	Summarize         bool          `mapstructure:"summarize"`           // summarize large pages via the LLM
+	SummarizeMinChars int           `mapstructure:"summarize_min_chars"` // pages shorter than this skip the LLM
+	Timeout           time.Duration `mapstructure:"timeout"`             // per-request timeout
+	BlockPrivate      bool          `mapstructure:"block_private"`       // SSRF guard: block non-public addresses
 }
 
 type ToolConfig struct {
 	Enabled bool `mapstructure:"enabled"`
-}
-
-// ExecToolConfig configures the sandboxed shell-exec tool. Disabled by default:
-// it is an LLM-callable shell and must only be granted to trusted roles.
-type ExecToolConfig struct {
-	Enabled   bool          `mapstructure:"enabled"`
-	Image     string        `mapstructure:"image"`      // docker image the command runs in
-	Timeout   time.Duration `mapstructure:"timeout"`    // wall-clock limit per command
-	Memory    string        `mapstructure:"memory"`     // docker --memory (e.g. "256m")
-	CPUs      string        `mapstructure:"cpus"`       // docker --cpus (e.g. "0.5")
-	PidsLimit int           `mapstructure:"pids_limit"` // docker --pids-limit
-	Network   bool          `mapstructure:"network"`    // false → --network=none
 }
 
 // Loader holds viper + a live, mutex-protected copy of the parsed config.
@@ -120,15 +128,15 @@ func Load(path string) (*Loader, error) {
 	v.SetDefault("connectors.whatsapp.enabled", true)
 	v.SetDefault("connectors.whatsapp.store_path", "data/whatsapp")
 	v.SetDefault("connectors.cli.enabled", true)
-	v.SetDefault("tools.places.enabled", true)
-	v.SetDefault("tools.exec.enabled", false)
-	v.SetDefault("tools.exec.image", "alpine:3.20")
-	v.SetDefault("tools.exec.timeout", "30s")
-	v.SetDefault("tools.exec.memory", "256m")
-	v.SetDefault("tools.exec.cpus", "0.5")
-	v.SetDefault("tools.exec.pids_limit", 128)
-	v.SetDefault("tools.exec.network", false)
 	v.SetDefault("tools.config.enabled", false)
+	v.SetDefault("tools.web_extract.enabled", true)
+	v.SetDefault("tools.web_extract.max_chars", 8000)
+	v.SetDefault("tools.web_extract.summarize", true)
+	v.SetDefault("tools.web_extract.summarize_min_chars", 5000)
+	v.SetDefault("tools.web_extract.timeout", "15s")
+	v.SetDefault("tools.web_extract.block_private", true)
+	v.SetDefault("tools.fs.enabled", false)
+	v.SetDefault("tools.fs.max_read_bytes", 10*1024*1024)
 	v.SetDefault("memory.top_k", 5)
 	v.SetDefault("memory.max_turns", 40)
 	v.SetDefault("memory.inactivity_timeout", "30m")
