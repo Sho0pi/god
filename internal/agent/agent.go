@@ -307,85 +307,34 @@ func (a *Agent) handleCommand(ctx context.Context, userKey string, msg connector
 		return
 	}
 
-	soulName := a.resolveSoul(ctx, msg)
 	roleName := a.resolveRole(ctx, msg)
-	roleCfg := a.getRoleConfig(roleName)
-
-	clearHistory := func() error {
-		a.timerMu.Lock()
-		if t, ok := a.timers[userKey]; ok {
-			t.Stop()
-			delete(a.timers, userKey)
-		}
-		a.timerMu.Unlock()
-		a.historyMu.Lock()
-		delete(a.history, userKey)
-		a.historyMu.Unlock()
-		return nil
-	}
-
-	rt := &command.Runtime{
-		ClearHistory: clearHistory,
-		IsAdmin: func() bool {
-			if roleName == "admin" {
-				return true
-			}
-			// Bootstrap admins (config.Admin) keep admin powers even if the
-			// store has assigned them a lower role.
-			for _, id := range a.liveConfig().Admin {
-				if id == msg.UserID {
-					return true
-				}
-			}
-			return false
-		},
-		FactoryReset: func() error {
-			if err := clearHistory(); err != nil {
-				return err
-			}
-			if a.store == nil {
-				return nil
-			}
-			if err := a.store.DeleteSoul(ctx, msg.Connector, msg.UserID); err != nil {
-				return fmt.Errorf("delete soul: %w", err)
-			}
-			if err := a.store.DeleteRole(ctx, msg.Connector, msg.UserID); err != nil {
-				return fmt.Errorf("delete role: %w", err)
-			}
-			if err := a.store.DeleteMemories(ctx, msg.Connector, msg.UserID); err != nil {
-				return fmt.Errorf("delete memories: %w", err)
-			}
-			return nil
-		},
-		GetInfo: func() command.UserInfo {
-			return command.UserInfo{
-				Soul:     soulName,
-				Role:     roleName,
-				LLMModel: roleCfg.LLM.Model,
-				Provider: roleCfg.LLM.Provider,
-			}
-		},
-	}
-
-	if a.store != nil {
-		rt.AllowAdd = func(number string) error {
-			return a.store.AddAllow(ctx, msg.Connector, number)
-		}
-		rt.AllowRemove = func(number string) error {
-			return a.store.RemoveAllow(ctx, msg.Connector, number)
-		}
-		rt.AllowList = func() ([]string, error) {
-			return a.store.ListAllow(ctx, msg.Connector)
-		}
-	}
-
-	rt.ResolveApproval = func(approve bool, id string) {
-		a.resumeApproval(ctx, userKey, msg.ChatID, approve, id)
+	rt := &cmdSession{
+		a:        a,
+		ctx:      ctx,
+		msg:      msg,
+		userKey:  userKey,
+		roleName: roleName,
+		soulName: a.resolveSoul(ctx, msg),
+		roleCfg:  a.getRoleConfig(roleName),
 	}
 
 	if err := def.Handler(ctx, req, rt); err != nil {
 		log.Printf("command /%s error: %v", def.Name, err)
 	}
+}
+
+// clearUserHistory stops the inactivity timer and drops short-term history for
+// a user. Used by /reset and /factory-reset.
+func (a *Agent) clearUserHistory(userKey string) {
+	a.timerMu.Lock()
+	if t, ok := a.timers[userKey]; ok {
+		t.Stop()
+		delete(a.timers, userKey)
+	}
+	a.timerMu.Unlock()
+	a.historyMu.Lock()
+	delete(a.history, userKey)
+	a.historyMu.Unlock()
 }
 
 // resolveSoul returns: store → connector default (from live config) → "default".

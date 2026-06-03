@@ -8,6 +8,26 @@ import (
 	"github.com/sho0pi/god/internal/command"
 )
 
+// fakeRuntime is a configurable command.Runtime for testing handlers in isolation.
+type fakeRuntime struct {
+	onClear func() error
+	admin   bool
+}
+
+func (f *fakeRuntime) ClearHistory() error {
+	if f.onClear != nil {
+		return f.onClear()
+	}
+	return nil
+}
+func (f *fakeRuntime) IsAdmin() bool                           { return f.admin }
+func (f *fakeRuntime) FactoryReset() error                     { return nil }
+func (f *fakeRuntime) Info() command.UserInfo                  { return command.UserInfo{} }
+func (f *fakeRuntime) AllowAdd(string) error                   { return nil }
+func (f *fakeRuntime) AllowRemove(string) error                { return nil }
+func (f *fakeRuntime) AllowList() ([]string, error)            { return nil, nil }
+func (f *fakeRuntime) ResolveApproval(approve bool, id string) {}
+
 func TestRegistry_Lookup(t *testing.T) {
 	reg := command.NewRegistry(command.Builtin())
 
@@ -69,9 +89,7 @@ func TestResetCommand_ClearsHistory(t *testing.T) {
 	req := command.Request{
 		Reply: func(text string) error { replied = text; return nil },
 	}
-	rt := &command.Runtime{
-		ClearHistory: func() error { cleared = true; return nil },
-	}
+	rt := &fakeRuntime{onClear: func() error { cleared = true; return nil }}
 
 	if err := def.Handler(context.Background(), req, rt); err != nil {
 		t.Fatalf("reset handler error: %v", err)

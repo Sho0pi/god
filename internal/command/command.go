@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -15,21 +16,26 @@ type Request struct {
 	Reply     func(text string) error
 }
 
-// Runtime provides command handlers with callbacks into the agent.
-type Runtime struct {
-	ClearHistory func() error
-	IsAdmin      func() bool
-	FactoryReset func() error // admin only: wipes soul + role + memories + history
-	GetInfo      func() UserInfo
+// Runtime gives command handlers access to agent capabilities scoped to the
+// current request. The agent supplies a concrete implementation per command.
+// Methods backed by a store return ErrUnsupported when none is configured.
+type Runtime interface {
+	ClearHistory() error
+	IsAdmin() bool
+	FactoryReset() error // admin only: wipes soul + role + memories + history
+	Info() UserInfo
 	// Allow-list management (admin only), scoped to the request's connector.
-	// Nil when no store is configured.
-	AllowAdd    func(number string) error
-	AllowRemove func(number string) error
-	AllowList   func() ([]string, error)
+	AllowAdd(number string) error
+	AllowRemove(number string) error
+	AllowList() ([]string, error)
 	// ResolveApproval approves (true) or denies (false) a parked tool call by id.
 	// It sends its own replies and continues the agent's tool loop.
-	ResolveApproval func(approve bool, id string)
+	ResolveApproval(approve bool, id string)
 }
+
+// ErrUnsupported is returned by Runtime methods whose capability is unavailable
+// in the current configuration (e.g. allow-list ops with no store).
+var ErrUnsupported = errors.New("not available in this configuration")
 
 // UserInfo carries the resolved identity for the current request.
 type UserInfo struct {
@@ -44,7 +50,7 @@ type Definition struct {
 	Name        string
 	Description string
 	Usage       string
-	Handler     func(ctx context.Context, req Request, rt *Runtime) error
+	Handler     func(ctx context.Context, req Request, rt Runtime) error
 }
 
 // Registry maps slash command names to their definitions.
@@ -63,7 +69,7 @@ func NewRegistry(defs []Definition) *Registry {
 		Name:        "help",
 		Description: "List available commands",
 		Usage:       "/help",
-		Handler: func(_ context.Context, req Request, _ *Runtime) error {
+		Handler: func(_ context.Context, req Request, _ Runtime) error {
 			var sb strings.Builder
 			for _, d := range r.defs {
 				fmt.Fprintf(&sb, "%s — %s\n", d.Usage, d.Description)
