@@ -7,7 +7,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/sho0pi/god/internal/llm"
-	"github.com/sho0pi/god/internal/tool"
+	toolpkg "github.com/sho0pi/god/internal/tools"
 )
 
 type Client struct {
@@ -26,7 +26,7 @@ func New(ctx context.Context, apiKey, model string) (*Client, error) {
 	return &Client{client: c, model: model}, nil
 }
 
-func (c *Client) ChatWithSystem(ctx context.Context, systemPrompt string, history []llm.Message, tools []tool.Tool) (*llm.Response, error) {
+func (c *Client) ChatWithSystem(ctx context.Context, systemPrompt string, history []llm.Message, tools []toolpkg.Tool) (*llm.Response, error) {
 	config := &genai.GenerateContentConfig{}
 
 	if systemPrompt != "" {
@@ -67,37 +67,51 @@ func (c *Client) ChatWithSystem(ctx context.Context, systemPrompt string, histor
 
 func (c *Client) Close() error { return nil }
 
-func toFuncDecls(tools []tool.Tool) []*genai.FunctionDeclaration {
+func toFuncDecls(tools []toolpkg.Tool) []*genai.FunctionDeclaration {
 	decls := make([]*genai.FunctionDeclaration, len(tools))
 	for i, t := range tools {
-		s := t.Schema()
-		params := &genai.Schema{
-			Type:       genai.TypeObject,
-			Properties: make(map[string]*genai.Schema),
-			Required:   s.Required,
-		}
-		for name, prop := range s.Properties {
-			gs := &genai.Schema{Description: prop.Description}
-			switch prop.Type {
-			case "string":
-				gs.Type = genai.TypeString
-			case "number":
-				gs.Type = genai.TypeNumber
-			case "boolean":
-				gs.Type = genai.TypeBoolean
-			}
-			if len(prop.Enum) > 0 {
-				gs.Enum = prop.Enum
-			}
-			params.Properties[name] = gs
-		}
 		decls[i] = &genai.FunctionDeclaration{
 			Name:        t.Name(),
 			Description: t.Description(),
-			Parameters:  params,
+			Parameters:  toGenaiSchema(t.Schema()),
 		}
 	}
 	return decls
+}
+
+func toGenaiSchema(s *toolpkg.Schema) *genai.Schema {
+	params := &genai.Schema{
+		Type:       genai.TypeObject,
+		Properties: make(map[string]*genai.Schema),
+		Required:   s.Required,
+	}
+	for name, prop := range s.Properties {
+		params.Properties[name] = toGenaiProperty(prop)
+	}
+	return params
+}
+
+func toGenaiProperty(prop *toolpkg.Property) *genai.Schema {
+	gs := &genai.Schema{Description: prop.Description}
+	switch prop.Type {
+	case "string":
+		gs.Type = genai.TypeString
+	case "number", "integer":
+		gs.Type = genai.TypeNumber
+	case "boolean":
+		gs.Type = genai.TypeBoolean
+	case "object":
+		gs.Type = genai.TypeObject
+	case "array":
+		gs.Type = genai.TypeArray
+		if prop.Items != nil {
+			gs.Items = toGenaiProperty(prop.Items)
+		}
+	}
+	if len(prop.Enum) > 0 {
+		gs.Enum = prop.Enum
+	}
+	return gs
 }
 
 func toContents(msgs []llm.Message) []*genai.Content {

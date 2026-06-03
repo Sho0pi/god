@@ -34,27 +34,18 @@ connectors:
     default_soul: human
 
 tools:
-  places:
-    # Requires GOOGLE_PLACES_API_KEY env var.
+  # web_extract: fetch web pages by URL and return them as markdown, summarizing
+  # large pages via the default LLM. Part of the provider-neutral internal/tools
+  # ecosystem (with web_search). SSRF guard (block_private) blocks
+  # loopback/private/link-local/cloud-metadata addresses — keep it true, since
+  # the model picks the URL and untrusted input can reach it via prompt-injection.
+  web_extract:
     enabled: true
-
-  # LLM-callable shell, OpenClaw-style — but every command runs inside a
-  # throwaway, locked-down Docker container (no host filesystem, no network by
-  # default, read-only root, dropped caps, memory/CPU/pid/time limits). Files do
-  # NOT persist between calls. Disabled by default; requires Docker.
-  #
-  # SECURITY: this is a shell the model can drive. Untrusted input (web_search
-  # results, message text) flows into the model, so a prompt-injection can call
-  # it. The container is the boundary. Only grant `exec` to trusted roles below
-  # (see roles.<role>.tools) — never to `guest`.
-  exec:
-    enabled: false
-    image: alpine:3.20   # must be pulled: docker pull alpine:3.20
-    timeout: 30s         # wall-clock cap per command
-    memory: 256m
-    cpus: "0.5"
-    pids_limit: 128
-    network: false       # true → container gets network (raises risk)
+    max_chars: 8000            # truncate each page to this many runes
+    summarize: true            # summarize pages over summarize_min_chars
+    summarize_min_chars: 5000  # smaller pages skip the LLM (Hermes min_length)
+    timeout: 15s
+    block_private: true
 
   # Lets god edit THIS config file (god.yaml) and nothing else — validated,
   # backed up to god.yaml.bak, hot-reloaded live. Cannot touch source code.
@@ -63,17 +54,49 @@ tools:
   config:
     enabled: false
 
+  # Filesystem tools (provider-neutral internal/tools/fs):
+  #   read_file  — read with line numbers, offset/limit, encoding=base64
+  #   list_dir   — list a directory (stdlib)
+  #   glob       — find files by pattern (requires `fd` on PATH)
+  #   grep       — search file contents by regex (requires `ripgrep`/`rg` on PATH)
+  # SECURITY: every path is model-supplied (untrusted). Access is contained to
+  # `root` — relative paths resolve from it, absolute paths must be inside it,
+  # symlinks that escape it are rejected, and glob/grep run with cwd=root so their
+  # output stays root-relative. File contents flow into the model context, so
+  # scope `root` to what god may see. Disabled by default; admin gets these via
+  # tools: []. `root` empty → god's working dir.
+  fs:
+    enabled: false
+    root: ""                  # the ONLY dir read_file may touch (empty = working dir)
+    max_read_bytes: 10485760  # 10 MiB per-read cap
+
   # Tools listed here are gated behind admin approval: god parks the call, shows
   # a preview, and waits for /approve <id> or /deny <id> (auto-expires in 10m).
-  # This is the rail that stops a prompt-injection from silently running exec or
-  # rewriting config. Strongly recommended whenever exec/config are enabled.
-  approval: [config, exec]
+  # This is the rail that stops a prompt-injection from silently rewriting config
+  # or writing files. Strongly recommended whenever `config` is enabled.
+  approval: [config]
 
-# Soul definitions — each soul is a named personality.
-# Assign souls per-connector (default_soul) or per-user via /soul set <name>.
+# Soul definitions — each soul is a named personality. Three souls: god
+# (onboarding), human (default fallback), caveman.
+# Assign souls per-connector (default_soul) or per-user via the set_soul tool.
 souls:
-  default:
-    prompt: "You are a helpful assistant."
+  god:
+    prompt: |
+      You are the setup agent for this AI assistant. Your only job is to quickly profile the new user and assign them the right soul.
+
+      How it works:
+      1. Greet them briefly. Ask them to tell you a bit about themselves — what they do, what they need this for, how they like to communicate.
+      2. Listen to their response. Pick up on their communication style and needs.
+      3. Call set_soul with the best fit:
+         - "human" → casual users, conversational tone, non-technical or mixed
+         - "caveman" → developers and technical users who want zero fluff, max compression
+      4. After calling set_soul, send one short confirmation so they know they're set up.
+
+      Rules:
+      - Don't overthink it. One message to greet and ask, one message to confirm after set_soul.
+      - Don't explain what souls are or give a menu. Just pick based on vibe.
+      - If they're clearly technical and terse, pick caveman. If they write normally, pick human.
+      - Be warm but brief. This isn't a long onboarding flow.
 
   human:
     prompt: |
@@ -123,15 +146,18 @@ souls:
 #   - "972501234567"
 
 # Roles control which LLM and which tools each user gets.
-# IMPORTANT: an empty `tools: []` means ALL tools. To restrict, list them
-# explicitly. The `exec` shell tool must only appear under trusted roles.
+# IMPORTANT: an empty `tools: []` means ALL registered tools. To restrict, list
+# names explicitly. Registered tools: web_search, web_extract, remember,
+# set_soul, and (when enabled) config + the fs tools (read_file, list_dir, glob,
+# grep, write_file, edit_file). Host-access tools (config, fs) only reach a role
+# via tools: [] or by naming them, so keep them on trusted roles.
 roles:
   admin:
     llm: { provider: gemini, model: gemini-3.1-flash-lite }
-    tools: [calculator, web_search, remember, set_soul, search_places, exec, config]
+    tools: []  # all registered tools
   user:
     llm: { provider: gemini, model: gemini-3.1-flash-lite }
-    tools: [calculator, web_search, remember, set_soul, search_places]
+    tools: [web_search, web_extract, remember, set_soul]
   guest:
     llm: { provider: gemini, model: gemini-3.1-flash-lite }
-    tools: [calculator, web_search]
+    tools: [web_search, web_extract]

@@ -3,7 +3,7 @@ package llm
 import (
 	"context"
 
-	"github.com/sho0pi/god/internal/tool"
+	toolpkg "github.com/sho0pi/god/internal/tools"
 )
 
 type ToolCall struct {
@@ -31,5 +31,5 @@ type Response struct {
 }
 
 type LLM interface {
-	ChatWithSystem(ctx context.Context, systemPrompt string, history []Message, tools []tool.Tool) (*Response, error)
+	ChatWithSystem(ctx context.Context, systemPrompt string, history []Message, tools []toolpkg.Tool) (*Response, error)
 }

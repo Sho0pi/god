@@ -14,11 +14,14 @@ import (
 	"github.com/sho0pi/god/internal/embed"
 	"github.com/sho0pi/god/internal/llm"
 	"github.com/sho0pi/god/internal/store"
-	"github.com/sho0pi/god/internal/tool"
-	"github.com/sho0pi/god/internal/tool/memory"
+	toolpkg "github.com/sho0pi/god/internal/tools"
 )
 
 const maxToolRounds = 10
+
+// defaultSoul is the fallback personality when none is assigned and no connector
+// default applies.
+const defaultSoul = "human"
 
 const extractionSystemPrompt = "Extract important facts about this user from the conversation history. " +
 	"Write one fact per line. Facts must be concrete and worth remembering across sessions: " +
@@ -49,7 +52,7 @@ type Agent struct {
 	connector         connector.Connector
 	llm               llm.LLM // default fallback
 	llmPool           *llm.Pool
-	registry          *tool.Registry
+	registry          *toolpkg.Registry
 	cmdRegistry       *command.Registry
 	embedder          embed.Embedder
 	store             store.Store
@@ -94,7 +97,7 @@ func (a *Agent) lockUser(key string) func() {
 	return mu.Unlock
 }
 
-func New(c connector.Connector, l llm.LLM, r *tool.Registry, e embed.Embedder, s store.Store, opts Options) *Agent {
+func New(c connector.Connector, l llm.LLM, r *toolpkg.Registry, e embed.Embedder, s store.Store, opts Options) *Agent {
 	cmdReg := opts.Commands
 	if cmdReg == nil {
 		cmdReg = command.NewRegistry(command.Builtin())
@@ -181,7 +184,7 @@ func (a *Agent) handleMessage(ctx context.Context, msg connector.Message) {
 
 	a.resetInactivityTimer(userKey, msg.Connector, msg.UserID)
 
-	ctx = context.WithValue(ctx, memory.UserKey{}, memory.UserInfo{
+	ctx = context.WithValue(ctx, toolpkg.UserKey{}, toolpkg.UserInfo{
 		Connector: msg.Connector,
 		UserID:    msg.UserID,
 	})
@@ -210,7 +213,7 @@ func (a *Agent) handleMessage(ctx context.Context, msg connector.Message) {
 // runToolLoop drives the LLM ↔ tool conversation until a final text answer.
 // Caller must hold the per-user lock. When a tool requires approval, the loop
 // parks its state (see pendingApproval) and returns; resumeApproval re-enters.
-func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID, chatID string, hist []llm.Message, systemPrompt string, tools []tool.Tool, msgLLM llm.LLM) {
+func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID, chatID string, hist []llm.Message, systemPrompt string, tools []toolpkg.Tool, msgLLM llm.LLM) {
 	for round := 0; round < maxToolRounds; round++ {
 		resp, err := msgLLM.ChatWithSystem(ctx, systemPrompt, hist, tools)
 		if err != nil {
@@ -231,7 +234,7 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 		}
 
 		tc := resp.ToolCall
-		log.Printf("tool call: %s %v", tc.Name, tc.Args)
+		log.Printf("🔧 tool use: model called %q args=%v (user=%s)", tc.Name, tc.Args, userKey)
 
 		// Approval gate: park sensitive tool calls and wait for /approve.
 		if a.needsApproval(tc.Name) {
@@ -255,13 +258,14 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 			return
 		}
 
-		result, err := a.registry.Dispatch(ctx, tc.Name, tc.Args)
+		res, err := a.registry.Dispatch(ctx, tc.Name, tc.Args)
+		result := res.Content
 		if err != nil {
-			log.Printf("tool error: %v", err)
+			log.Printf("🔧 tool error: %s → %v", tc.Name, err)
 			result = "error: " + err.Error()
 		}
 
-		log.Printf("tool result: %s → %s", tc.Name, truncate(result, 80))
+		log.Printf("🔧 tool result: %s → %s", tc.Name, truncate(result, 80))
 
 		hist = append(hist,
 			llm.Message{Role: "model", ToolCall: tc},
@@ -337,7 +341,7 @@ func (a *Agent) clearUserHistory(userKey string) {
 	a.historyMu.Unlock()
 }
 
-// resolveSoul returns: store → connector default (from live config) → "default".
+// resolveSoul returns: store → connector default (from live config) → defaultSoul.
 func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 	if a.store != nil {
 		name, err := a.store.GetSoul(ctx, msg.Connector, msg.UserID)
@@ -363,7 +367,7 @@ func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 			return name
 		}
 	}
-	return "default"
+	return defaultSoul
 }
 
 // resolveRole returns: store → admin bootstrap list → connector default (from live config) → "user".

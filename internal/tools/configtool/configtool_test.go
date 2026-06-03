@@ -1,11 +1,14 @@
-package cfgtool
+package configtool
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sho0pi/god/internal/tools"
 )
 
 const validCfg = `llm:
@@ -16,22 +19,27 @@ admin:
 
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "god.yaml")
+	path := filepath.Join(t.TempDir(), "god.yaml")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
+func exec(t *testing.T, path string, args Args) (tools.Result, error) {
+	t.Helper()
+	raw, _ := json.Marshal(args)
+	return New(path).Execute(context.Background(), raw)
+}
+
 func TestConfigGet(t *testing.T) {
 	path := writeTemp(t, validCfg)
-	out, err := New(path).Execute(context.Background(), map[string]any{"action": "get"})
+	res, err := exec(t, path, Args{Action: "get"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "972500000000") {
-		t.Fatalf("get did not return current config:\n%s", out)
+	if !strings.Contains(res.Content, "972500000000") {
+		t.Fatalf("get did not return current config:\n%s", res.Content)
 	}
 }
 
@@ -39,12 +47,12 @@ func TestConfigSetValidWritesAndBacksUp(t *testing.T) {
 	path := writeTemp(t, validCfg)
 	newCfg := validCfg + "  - \"972511111111\"\n"
 
-	out, err := New(path).Execute(context.Background(), map[string]any{"action": "set", "content": newCfg})
+	res, err := exec(t, path, Args{Action: "set", Content: newCfg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "hot-reload") {
-		t.Errorf("unexpected success message: %s", out)
+	if !strings.Contains(res.Content, "hot-reload") {
+		t.Errorf("unexpected success message: %s", res.Content)
 	}
 
 	got, _ := os.ReadFile(path)
@@ -62,14 +70,10 @@ func TestConfigSetValidWritesAndBacksUp(t *testing.T) {
 
 func TestConfigSetInvalidRejected(t *testing.T) {
 	path := writeTemp(t, validCfg)
-	_, err := New(path).Execute(context.Background(), map[string]any{
-		"action":  "set",
-		"content": "llm:\n  model: [this is: not valid yaml",
-	})
+	_, err := exec(t, path, Args{Action: "set", Content: "llm:\n  model: [this is: not valid yaml"})
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
-	// Original file must be untouched.
 	got, _ := os.ReadFile(path)
 	if string(got) != validCfg {
 		t.Errorf("invalid set must not modify the file, got:\n%s", got)
@@ -78,7 +82,14 @@ func TestConfigSetInvalidRejected(t *testing.T) {
 
 func TestConfigSetMissingContent(t *testing.T) {
 	path := writeTemp(t, validCfg)
-	if _, err := New(path).Execute(context.Background(), map[string]any{"action": "set"}); err == nil {
+	if _, err := exec(t, path, Args{Action: "set"}); err == nil {
 		t.Fatal("expected error when content missing")
+	}
+}
+
+func TestConfigUnknownAction(t *testing.T) {
+	path := writeTemp(t, validCfg)
+	if _, err := exec(t, path, Args{Action: "delete"}); err == nil {
+		t.Fatal("expected error for unknown action")
 	}
 }

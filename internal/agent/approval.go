@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/sho0pi/god/internal/llm"
-	"github.com/sho0pi/god/internal/tool"
-	"github.com/sho0pi/god/internal/tool/memory"
+	toolpkg "github.com/sho0pi/god/internal/tools"
 )
 
 // approvalTTL is how long a parked approval waits before it is auto-discarded.
@@ -28,7 +27,7 @@ type pendingApproval struct {
 	toolCall     *llm.ToolCall
 	hist         []llm.Message // includes the model's tool-call turn
 	systemPrompt string
-	tools        []tool.Tool
+	tools        []toolpkg.Tool
 	llm          llm.LLM
 	expires      time.Time
 }
@@ -99,7 +98,7 @@ func (a *Agent) resumeApproval(ctx context.Context, userKey, chatID string, appr
 	}
 
 	// Restore user identity for tools that read it from context.
-	ctx = context.WithValue(ctx, memory.UserKey{}, memory.UserInfo{
+	ctx = context.WithValue(ctx, toolpkg.UserKey{}, toolpkg.UserInfo{
 		Connector: p.connector,
 		UserID:    p.userID,
 	})
@@ -110,7 +109,7 @@ func (a *Agent) resumeApproval(ctx context.Context, userKey, chatID string, appr
 		if err != nil {
 			result = "error: " + err.Error()
 		} else {
-			result = r
+			result = r.Content
 		}
 		log.Printf("approval %s APPROVED: %s → %s", id, p.toolCall.Name, truncate(result, 80))
 	} else {
