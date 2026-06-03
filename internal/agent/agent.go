@@ -56,15 +56,13 @@ type Agent struct {
 	maxTurns          int
 	inactivityTimeout time.Duration
 	connectorName     string
-	// configFn, when non-nil, is the live-config supplier. Takes priority over static fields.
+	// configFn is the single source of souls/roles/admins/topK, read live per
+	// message. New synthesises one from static Options when none is supplied.
 	configFn func() *config.Config
-	// Static fields used when configFn is nil.
-	topK         int
-	souls        map[string]config.SoulConfig
+	// Per-connector defaults for arbitrary connector names (config.Config only
+	// types whatsapp/cli). Used as a fallback in soul/role resolution.
 	defaultSouls map[string]string
-	roles        map[string]config.RoleConfig
 	defaultRoles map[string]string
-	admins       map[string]struct{}
 
 	historyMu sync.Mutex
 	history   map[string][]llm.Message
@@ -101,13 +99,21 @@ func New(c connector.Connector, l llm.LLM, r *tool.Registry, e embed.Embedder, s
 	if cmdReg == nil {
 		cmdReg = command.NewRegistry(command.Builtin())
 	}
-	admins := make(map[string]struct{}, len(opts.Admins))
-	for _, id := range opts.Admins {
-		admins[id] = struct{}{}
-	}
 	pool := opts.LLMPool
 	if pool == nil {
 		pool = llm.NewPool(nil, l)
+	}
+	// Single config path: use the supplier if given, else synthesise one from
+	// the static Options so callers (mainly tests) need not build a Loader.
+	configFn := opts.ConfigFn
+	if configFn == nil {
+		static := &config.Config{
+			Memory: config.MemoryConfig{TopK: opts.TopK},
+			Souls:  opts.Souls,
+			Roles:  opts.Roles,
+			Admin:  opts.Admins,
+		}
+		configFn = func() *config.Config { return static }
 	}
 	return &Agent{
 		connector:         c,
@@ -117,16 +123,12 @@ func New(c connector.Connector, l llm.LLM, r *tool.Registry, e embed.Embedder, s
 		cmdRegistry:       cmdReg,
 		embedder:          e,
 		store:             s,
-		topK:              opts.TopK,
 		maxTurns:          opts.MaxTurns,
 		inactivityTimeout: opts.InactivityTimeout,
-		configFn:          opts.ConfigFn,
+		configFn:          configFn,
 		connectorName:     opts.ConnectorName,
-		souls:             opts.Souls,
 		defaultSouls:      opts.DefaultSouls,
-		roles:             opts.Roles,
 		defaultRoles:      opts.DefaultRoles,
-		admins:            admins,
 		history:           make(map[string][]llm.Message),
 		userMu:            make(map[string]*sync.Mutex),
 		timers:            make(map[string]*time.Timer),
@@ -134,24 +136,9 @@ func New(c connector.Connector, l llm.LLM, r *tool.Registry, e embed.Embedder, s
 	}
 }
 
-// liveConfig returns the current config snapshot. If a supplier is set, reads from it;
-// otherwise synthesises a minimal Config from static Options fields.
+// liveConfig returns the current config snapshot from the supplier.
 func (a *Agent) liveConfig() *config.Config {
-	if a.configFn != nil {
-		return a.configFn()
-	}
-	return &config.Config{
-		Memory: config.MemoryConfig{TopK: a.topK},
-		Souls:  a.souls,
-		Roles:  a.roles,
-		Admin: func() []string {
-			out := make([]string, 0, len(a.admins))
-			for id := range a.admins {
-				out = append(out, id)
-			}
-			return out
-		}(),
-	}
+	return a.configFn()
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -343,8 +330,14 @@ func (a *Agent) handleCommand(ctx context.Context, userKey string, msg connector
 			if roleName == "admin" {
 				return true
 			}
-			_, ok := a.admins[msg.UserID]
-			return ok
+			// Bootstrap admins (config.Admin) keep admin powers even if the
+			// store has assigned them a lower role.
+			for _, id := range a.liveConfig().Admin {
+				if id == msg.UserID {
+					return true
+				}
+			}
+			return false
 		},
 		FactoryReset: func() error {
 			if err := clearHistory(); err != nil {
@@ -435,14 +428,11 @@ func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
 		}
 	}
 	cfg := a.liveConfig()
-	// Admin bootstrap: check live config admin list + static admins map.
+	// Admin bootstrap: config admin list.
 	for _, id := range cfg.Admin {
 		if id == msg.UserID {
 			return "admin"
 		}
-	}
-	if _, ok := a.admins[msg.UserID]; ok {
-		return "admin"
 	}
 	switch msg.Connector {
 	case "whatsapp":
@@ -465,11 +455,6 @@ func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
 func (a *Agent) getRoleConfig(roleName string) config.RoleConfig {
 	if cfg := a.liveConfig(); cfg.Roles != nil {
 		if rc, ok := cfg.Roles[roleName]; ok {
-			return rc
-		}
-	}
-	if a.roles != nil {
-		if rc, ok := a.roles[roleName]; ok {
 			return rc
 		}
 	}
@@ -528,14 +513,8 @@ func (a *Agent) extractAndSave(ctx context.Context, connectorName, userID string
 func (a *Agent) buildSystemPrompt(ctx context.Context, msg connector.Message, soulName string) string {
 	cfg := a.liveConfig()
 	base := "You are a helpful assistant."
-	if cfg.Souls != nil {
-		if soul, ok := cfg.Souls[soulName]; ok && soul.Prompt != "" {
-			base = soul.Prompt
-		}
-	} else if a.souls != nil {
-		if soul, ok := a.souls[soulName]; ok && soul.Prompt != "" {
-			base = soul.Prompt
-		}
+	if soul, ok := cfg.Souls[soulName]; ok && soul.Prompt != "" {
+		base = soul.Prompt
 	}
 
 	if a.embedder == nil || a.store == nil {
@@ -548,10 +527,7 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, msg connector.Message, so
 		return base
 	}
 
-	topK := a.topK
-	if topK == 0 {
-		topK = cfg.Memory.TopK
-	}
+	topK := cfg.Memory.TopK
 	if topK == 0 {
 		topK = 5
 	}
