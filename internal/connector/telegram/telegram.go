@@ -96,6 +96,20 @@ func (c *Connector) isAllowed(userID string) bool {
 	return false
 }
 
+// Validate checks a bot token by calling getMe and returns the bot's @username.
+// Used by the setup wizard to verify a token interactively before saving it.
+func Validate(ctx context.Context, token string) (username string, err error) {
+	bot, err := telego.NewBot(token, telego.WithDiscardLogger())
+	if err != nil {
+		return "", fmt.Errorf("invalid token: %w", err)
+	}
+	me, err := bot.GetMe(ctx)
+	if err != nil {
+		return "", fmt.Errorf("token rejected by Telegram: %w", err)
+	}
+	return me.Username, nil
+}
+
 func (c *Connector) Start(ctx context.Context) error {
 	slog.Info("telegram: starting")
 
