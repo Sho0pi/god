@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -74,39 +73,13 @@ func buildGatewayConnectors(a *app) ([]connector.Connector, error) {
 	return children, nil
 }
 
-// resolveWhatsAppStore returns the WhatsApp session store directory. If
-// configured is non-empty it is used as-is. Otherwise it defaults to
-// ~/.god/whatsapp, and any existing data/whatsapp directory from the old
-// default is migrated there automatically on first run.
+// resolveWhatsAppStore returns the WhatsApp session store directory.
+// If configured is non-empty it is used as-is; otherwise defaults to ~/.god/whatsapp.
 func resolveWhatsAppStore(configured string) (string, error) {
 	if configured != "" {
 		return configured, nil
 	}
-	target, err := godhome.Path("whatsapp")
-	if err != nil {
-		return "", err
-	}
-	migrateWhatsAppStore("data/whatsapp", target)
-	return target, nil
-}
-
-// migrateWhatsAppStore moves src to dst when src exists and dst does not.
-func migrateWhatsAppStore(src, dst string) {
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return
-	}
-	if _, err := os.Stat(dst); err == nil {
-		return // destination already present — nothing to do
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		slog.Warn("whatsapp: migration: cannot create parent dir", "err", err)
-		return
-	}
-	if err := os.Rename(src, dst); err != nil {
-		slog.Warn("whatsapp: migration: move failed — move manually", "src", src, "dst", dst, "err", err)
-		return
-	}
-	slog.Info("whatsapp: migrated session store", "from", src, "to", dst)
+	return godhome.Path("whatsapp")
 }
 
 func init() {
