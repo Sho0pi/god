@@ -1,25 +1,17 @@
 package main
 
 import (
-	"log/slog"
-	"os"
-
 	"github.com/joho/godotenv"
 
 	"github.com/sho0pi/god/internal/cmd"
 	"github.com/sho0pi/god/internal/godhome"
+	"github.com/sho0pi/god/internal/logging"
 )
 
 func main() {
 	loadEnv()
-	setupLogger()
+	logging.Setup()
 	cmd.Execute()
-}
-
-func setupLogger() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})))
 }
 
 // loadEnv populates the process environment from ~/.god/.env, falling back to a

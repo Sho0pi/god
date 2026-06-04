@@ -19,7 +19,11 @@ go run . cli                  # talk to the running gateway from a second termin
 
 `god` keeps its state in **`~/.god/`** (override with `$GOD_HOME`):
 `god.yaml` (config), `.env` (API keys), `whatsapp/` (session), `god.sock`
-(control socket), `gateway.lock`.
+(control socket), `gateway.lock`, and `god.log`.
+
+Logs go to stderr (human-readable) and are also appended to **`~/.god/god.log`**
+as JSON with source locations — review a past run with
+`tail -f ~/.god/god.log` or `jq 'select(.level=="ERROR")' ~/.god/god.log`.
 
 ---
 
