@@ -3,12 +3,42 @@ package gemini
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
+	"time"
 
 	"google.golang.org/genai"
 
 	"github.com/sho0pi/god/internal/llm"
 	toolpkg "github.com/sho0pi/god/internal/tools"
 )
+
+// validateBaseURL is the Gemini REST endpoint used by Validate. It's a var so
+// tests can point it at an httptest server.
+var validateBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+
+// Validate checks an API key with a cheap request (GET /models?key=…),
+// returning nil if the key is accepted. Used by the `god model` setup wizard.
+// It uses a raw HTTP call because the genai SDK has no lightweight ping.
+func Validate(ctx context.Context, apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("gemini: API key is required")
+	}
+	u := validateBaseURL + "/models?key=" + url.QueryEscape(apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("gemini: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("gemini: key rejected (status %d)", resp.StatusCode)
+	}
+	return nil
+}
 
 type Client struct {
 	client *genai.Client

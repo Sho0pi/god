@@ -128,3 +128,24 @@ func TestNewRequiresKey(t *testing.T) {
 		t.Error("expected error for empty api key")
 	}
 }
+
+func TestValidate(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") == "" || r.Header.Get("anthropic-version") == "" {
+			t.Error("missing auth/version headers")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(ok.Close)
+	if err := validateAt(context.Background(), ok.URL, "key"); err != nil {
+		t.Errorf("valid key should pass: %v", err)
+	}
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(bad.Close)
+	if err := validateAt(context.Background(), bad.URL, "key"); err == nil {
+		t.Error("401 should fail validation")
+	}
+}

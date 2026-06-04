@@ -48,7 +48,8 @@ type MemoryConfig struct {
 }
 
 type LLMConfig struct {
-	Model string `mapstructure:"model"`
+	Provider string `mapstructure:"provider"` // "" → gemini
+	Model    string `mapstructure:"model"`
 }
 
 type ConnectorsConfig struct {

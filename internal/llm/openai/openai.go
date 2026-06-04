@@ -41,6 +41,32 @@ func New(_ context.Context, apiKey, model string) (*Client, error) {
 
 func (c *Client) Close() error { return nil }
 
+// Validate checks an API key with a cheap authenticated request (GET /models),
+// returning nil if the key is accepted. Used by the `god model` setup wizard.
+func Validate(ctx context.Context, apiKey string) error {
+	return validateAt(ctx, defaultBaseURL, apiKey)
+}
+
+func validateAt(ctx context.Context, baseURL, apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("openai: API key is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/models", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("openai: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("openai: key rejected (status %d)", resp.StatusCode)
+	}
+	return nil
+}
+
 // --- wire types ------------------------------------------------------------
 
 type chatRequest struct {

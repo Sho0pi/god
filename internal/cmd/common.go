@@ -66,15 +66,14 @@ func buildEmbedder(ctx context.Context, apiKey string) embed.Embedder {
 	return e
 }
 
-func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *llm.Pool {
-	factory := func(ctx context.Context, pcfg llm.ProviderConfig) (llm.LLM, error) {
+// llmFactory builds the provider→client factory shared by the default LLM and
+// the pool. API keys come from the environment (loaded from ~/.god/.env in main;
+// the `god model` wizard writes them there).
+func (a *app) llmFactory() llm.Factory {
+	return func(ctx context.Context, pcfg llm.ProviderConfig) (llm.LLM, error) {
 		switch pcfg.Provider {
-		case "gemini", "google":
-			key := os.Getenv("GEMINI_API_KEY")
-			if key == "" {
-				key = geminiKey
-			}
-			return llmgemini.New(ctx, key, pcfg.Model)
+		case "gemini", "google", "":
+			return llmgemini.New(ctx, os.Getenv("GEMINI_API_KEY"), pcfg.Model)
 		case "openai":
 			return llmopenai.New(ctx, os.Getenv("OPENAI_API_KEY"), pcfg.Model)
 		case "anthropic", "claude":
@@ -83,7 +82,10 @@ func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *
 			return nil, llm.ErrUnsupportedProvider(pcfg.Provider)
 		}
 	}
-	pool := llm.NewPool(factory, def)
+}
+
+func (a *app) buildLLMPool(ctx context.Context, def llm.LLM) *llm.Pool {
+	pool := llm.NewPool(a.llmFactory(), def)
 	// Pre-warm role LLMs at startup.
 	for name, role := range a.cfg.Roles {
 		if role.LLM.Provider == "" || role.LLM.Model == "" {
@@ -96,6 +98,17 @@ func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *
 		}
 	}
 	return pool
+}
+
+// defaultModelFor returns a built-in fallback model for a provider when none is
+// configured. Only Gemini has one; other providers must set llm.model.
+func defaultModelFor(provider string) string {
+	switch provider {
+	case "gemini", "google", "":
+		return "gemini-3.1-flash-lite"
+	default:
+		return ""
+	}
 }
 
 // buildRegistry registers the provider-neutral tools (internal/tools). For now
@@ -174,26 +187,27 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 
 func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 	cfg := a.cfg
-	geminiKey := os.Getenv("GEMINI_API_KEY")
-	if geminiKey == "" {
-		slog.Error("GEMINI_API_KEY is required")
-		os.Exit(1)
-	}
 
+	// The default LLM (used when a role/soul has no llm of its own) can be any
+	// provider, set via `llm.provider` / `llm.model` (run `god model`).
+	provider := cfg.LLM.Provider
 	model := cfg.LLM.Model
 	if model == "" {
-		model = os.Getenv("GEMINI_MODEL")
+		model = defaultModelFor(provider)
 	}
 	if model == "" {
-		model = "gemini-3.1-flash-lite"
-	}
-
-	defaultLLM, err := llmgemini.New(ctx, geminiKey, model)
-	if err != nil {
-		slog.Error("gemini init", "err", err)
+		slog.Error("no default model configured — run `god model` or set llm.model", "provider", provider)
 		os.Exit(1)
 	}
-	defer func() { _ = defaultLLM.Close() }()
+
+	defaultLLM, err := a.llmFactory()(ctx, llm.ProviderConfig{Provider: provider, Model: model})
+	if err != nil {
+		slog.Error("default LLM init failed — check the provider's API key (run `god model`)", "provider", provider, "err", err)
+		os.Exit(1)
+	}
+	if cl, ok := defaultLLM.(interface{ Close() error }); ok {
+		defer func() { _ = cl.Close() }()
+	}
 
 	s := a.buildStore(ctx)
 	if s != nil {
@@ -214,12 +228,18 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 		}
 	}
 
+	// Embeddings (long-term memory) are Gemini-only; build the embedder only when
+	// a Gemini key is present, regardless of the default chat provider.
 	var e embed.Embedder
 	if s != nil {
-		e = buildEmbedder(ctx, geminiKey)
+		if geminiKey := os.Getenv("GEMINI_API_KEY"); geminiKey != "" {
+			e = buildEmbedder(ctx, geminiKey)
+		} else {
+			slog.Warn("memory: GEMINI_API_KEY not set — long-term memory disabled (embeddings need Gemini)")
+		}
 	}
 
-	pool := a.buildLLMPool(ctx, geminiKey, defaultLLM)
+	pool := a.buildLLMPool(ctx, defaultLLM)
 	supply := a.loader.Supplier()
 	a.loader.Watch(nil) // keeps loader's internal cfg updated; supplier reads it
 

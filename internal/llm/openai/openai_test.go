@@ -126,3 +126,28 @@ func TestAPIError(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+func TestValidate(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			t.Error("missing Authorization header")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(ok.Close)
+	if err := validateAt(context.Background(), ok.URL, "sk-key"); err != nil {
+		t.Errorf("valid key should pass: %v", err)
+	}
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(bad.Close)
+	if err := validateAt(context.Background(), bad.URL, "sk-key"); err == nil {
+		t.Error("401 should fail validation")
+	}
+
+	if err := validateAt(context.Background(), ok.URL, ""); err == nil {
+		t.Error("empty key should fail")
+	}
+}

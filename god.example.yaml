@@ -1,4 +1,12 @@
+# Global default LLM — used when a role/soul has no llm of its own.
+# Set it interactively with `god model` (also stores the API key in ~/.god/.env).
+#   provider: gemini | openai | anthropic   (empty = gemini)
+#   model:    a model id for that provider
+# API keys are read from the environment: GEMINI_API_KEY / OPENAI_API_KEY /
+# ANTHROPIC_API_KEY (loaded from ~/.god/.env). Embeddings/long-term memory are
+# Gemini-only, so memory needs GEMINI_API_KEY regardless of the chat provider.
 llm:
+  provider: gemini
   model: gemini-3.1-flash-lite
 
 # PostgreSQL connection string (prefer DATABASE_URL env var for credentials)
