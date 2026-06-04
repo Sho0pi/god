@@ -102,7 +102,12 @@ func (s *stateStore) DeleteMemories(_ context.Context, c, u string) error {
 func (s *stateStore) AddAllow(_ context.Context, _, _ string) error           { return nil }
 func (s *stateStore) RemoveAllow(_ context.Context, _, _ string) error        { return nil }
 func (s *stateStore) ListAllow(_ context.Context, _ string) ([]string, error) { return nil, nil }
-func (s *stateStore) Close() error                                            { return nil }
+func (s *stateStore) ResolveIdentity(_ context.Context, c, u string) (string, string, error) {
+	return c, u, nil
+}
+func (s *stateStore) Link(_ context.Context, _, _, _, _ string) error { return nil }
+func (s *stateStore) Unlink(_ context.Context, _, _ string) error     { return nil }
+func (s *stateStore) Close() error                                    { return nil }
 
 // --- helpers ---
 

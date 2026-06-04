@@ -111,7 +111,12 @@ func (s *mockStore) SearchMemories(_ context.Context, _, _ string, _ []float32, 
 func (s *mockStore) AddAllow(_ context.Context, _, _ string) error           { return nil }
 func (s *mockStore) RemoveAllow(_ context.Context, _, _ string) error        { return nil }
 func (s *mockStore) ListAllow(_ context.Context, _ string) ([]string, error) { return nil, nil }
-func (s *mockStore) Close() error                                            { return nil }
+func (s *mockStore) ResolveIdentity(_ context.Context, c, u string) (string, string, error) {
+	return c, u, nil
+}
+func (s *mockStore) Link(_ context.Context, _, _, _, _ string) error { return nil }
+func (s *mockStore) Unlink(_ context.Context, _, _ string) error     { return nil }
+func (s *mockStore) Close() error                                    { return nil }
 
 // --- mock embedder ---
 

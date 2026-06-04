@@ -81,6 +81,9 @@ type Agent struct {
 
 	pendingMu sync.Mutex
 	pending   map[string]*pendingApproval
+
+	linkMu    sync.Mutex
+	linkCodes map[string]linkCode // code → hub identity awaiting redemption
 }
 
 // lockUser acquires the per-user lock, creating it on first use, and returns
@@ -136,6 +139,7 @@ func New(c connector.Connector, l llm.LLM, r *toolpkg.Registry, e embed.Embedder
 		userMu:            make(map[string]*sync.Mutex),
 		timers:            make(map[string]*time.Timer),
 		pending:           make(map[string]*pendingApproval),
+		linkCodes:         make(map[string]linkCode),
 	}
 }
 

@@ -27,6 +27,10 @@ func (f *fakeRuntime) AllowAdd(string) error                   { return nil }
 func (f *fakeRuntime) AllowRemove(string) error                { return nil }
 func (f *fakeRuntime) AllowList() ([]string, error)            { return nil, nil }
 func (f *fakeRuntime) ResolveApproval(approve bool, id string) {}
+func (f *fakeRuntime) GenerateLinkCode() (string, error)       { return "ABC123", nil }
+func (f *fakeRuntime) RedeemLinkCode(string) (string, error)   { return "whatsapp:1", nil }
+func (f *fakeRuntime) Unlink() error                           { return nil }
+func (f *fakeRuntime) LinkStatus() (bool, string)              { return false, "" }
 
 func TestRegistry_Lookup(t *testing.T) {
 	reg := command.NewRegistry(command.Builtin())
@@ -77,6 +81,51 @@ func TestRegistry_Help(t *testing.T) {
 	}
 	if !strings.Contains(replied, "/help") {
 		t.Errorf("help output missing /help, got: %q", replied)
+	}
+}
+
+func TestLinkCommand_NoArgGeneratesCode(t *testing.T) {
+	reg := command.NewRegistry(command.Builtin())
+	def, ok := reg.Lookup("link")
+	if !ok {
+		t.Fatal("expected 'link' to be registered")
+	}
+	var replied string
+	req := command.Request{Text: "/link", Reply: func(t string) error { replied = t; return nil }}
+	if err := def.Handler(context.Background(), req, &fakeRuntime{}); err != nil {
+		t.Fatalf("link handler error: %v", err)
+	}
+	if !strings.Contains(replied, "ABC123") {
+		t.Errorf("expected code in reply, got %q", replied)
+	}
+}
+
+func TestLinkCommand_WithCodeRedeems(t *testing.T) {
+	reg := command.NewRegistry(command.Builtin())
+	def, _ := reg.Lookup("link")
+	var replied string
+	req := command.Request{Text: "/link XYZ", Reply: func(t string) error { replied = t; return nil }}
+	if err := def.Handler(context.Background(), req, &fakeRuntime{}); err != nil {
+		t.Fatalf("link redeem error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(replied), "linked") || !strings.Contains(replied, "whatsapp:1") {
+		t.Errorf("expected linked confirmation, got %q", replied)
+	}
+}
+
+func TestUnlinkCommand(t *testing.T) {
+	reg := command.NewRegistry(command.Builtin())
+	def, ok := reg.Lookup("unlink")
+	if !ok {
+		t.Fatal("expected 'unlink' to be registered")
+	}
+	var replied string
+	req := command.Request{Text: "/unlink", Reply: func(t string) error { replied = t; return nil }}
+	if err := def.Handler(context.Background(), req, &fakeRuntime{}); err != nil {
+		t.Fatalf("unlink handler error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(replied), "unlinked") {
+		t.Errorf("expected unlink confirmation, got %q", replied)
 	}
 }
 

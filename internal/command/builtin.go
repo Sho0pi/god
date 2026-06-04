@@ -16,6 +16,48 @@ func Builtin() []Definition {
 		allowCommand(),
 		approveCommand(),
 		denyCommand(),
+		linkCommand(),
+		unlinkCommand(),
+	}
+}
+
+// linkCommand generates a code (no arg) or redeems one (with arg) to share a
+// profile + memory across connectors.
+func linkCommand() Definition {
+	return Definition{
+		Name:        "link",
+		Description: "Link this chat to your account on another app (shared soul, role, memory).",
+		Usage:       "/link  (get a code) | /link <code>  (use a code from your other chat)",
+		Handler: func(_ context.Context, req Request, rt Runtime) error {
+			fields := strings.Fields(req.Text)
+			if len(fields) < 2 {
+				code, err := rt.GenerateLinkCode()
+				if err != nil {
+					return req.Reply("Linking isn't available here.")
+				}
+				return req.Reply(fmt.Sprintf(
+					"Your link code is %s (valid 10 minutes).\nFrom your other chat, send: /link %s", code, code))
+			}
+			label, err := rt.RedeemLinkCode(fields[1])
+			if err != nil {
+				return req.Reply("Couldn't link: " + err.Error())
+			}
+			return req.Reply("Linked — this chat now shares the profile and memory of " + label + ".")
+		},
+	}
+}
+
+func unlinkCommand() Definition {
+	return Definition{
+		Name:        "unlink",
+		Description: "Detach this chat from a linked account.",
+		Usage:       "/unlink",
+		Handler: func(_ context.Context, req Request, rt Runtime) error {
+			if err := rt.Unlink(); err != nil {
+				return req.Reply("Couldn't unlink: " + err.Error())
+			}
+			return req.Reply("Unlinked. This chat now has its own profile again.")
+		},
 	}
 }
 
@@ -156,8 +198,12 @@ func whoamiCommand() Definition {
 				return req.Reply("Info unavailable.")
 			}
 			info := rt.Info()
-			return req.Reply(fmt.Sprintf("Soul: %s\nRole: %s\nLLM: %s/%s",
-				info.Soul, info.Role, info.Provider, info.LLMModel))
+			msg := fmt.Sprintf("Soul: %s\nRole: %s\nLLM: %s/%s",
+				info.Soul, info.Role, info.Provider, info.LLMModel)
+			if linked, detail := rt.LinkStatus(); linked {
+				msg += "\nLinked to: " + detail
+			}
+			return req.Reply(msg)
 		},
 	}
 }

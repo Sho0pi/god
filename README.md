@@ -120,6 +120,16 @@ memory:
 Short-term memory is in RAM per user, cleared by `/reset` or restart. Long-term
 memory lives in Postgres + pgvector, cleared only by `/factory-reset`.
 
+### Linking identities across connectors
+
+By default each chat identity (`whatsapp:<number>`, `telegram:<id>`) is its own
+profile. To make your Telegram and WhatsApp share one soul, role, and long-term
+memory: on your **existing** chat send `/link` to get a short code, then on the
+**new** chat send `/link <code>`. The new identity adopts the existing account's
+soul + role and both sets of memories merge. `/unlink` detaches. One identity per
+connector per account — two WhatsApp numbers stay two users. (Short-term chat
+history is not shared — those are separate live conversations.)
+
 ### Souls
 
 Personalities — each is a system prompt (optional model override). Built-ins:
@@ -184,7 +194,10 @@ Keys live in `~/.god/.env` (written by `god model`); shell env overrides it.
 |---------|-----|--------|
 | `/help` | everyone | List commands |
 | `/reset` | everyone | Clear conversation history (soul/role/memories kept) |
-| `/whoami` | everyone | Show current soul, role, LLM |
+| `/whoami` | everyone | Show current soul, role, LLM (and linked account, if any) |
+| `/link` | everyone | Get a code to link this chat to your account on another app |
+| `/link <code>` | everyone | Redeem a code from your other chat (shares profile + memory) |
+| `/unlink` | everyone | Detach this chat from a linked account |
 | `/allow add\|remove\|list <number>` | admin | Manage the WhatsApp allow-list (store-backed) |
 | `/approve <id>` `/deny <id>` | admin | Resolve a parked tool call (approval gate) |
 | `/factory-reset` | admin | Wipe soul, role, all memories, and history |

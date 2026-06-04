@@ -38,6 +38,23 @@ type Store interface {
 	RoleStore
 	MemoryStore
 	AllowStore
+	IdentityStore
 
 	Close() error
+}
+
+// IdentityStore links chat identities across connectors so one person using e.g.
+// WhatsApp + Telegram shares a single profile (soul, role, memory).
+type IdentityStore interface {
+	// ResolveIdentity returns the canonical (hub) identity for the given
+	// identity, or the identity itself when it is not linked.
+	ResolveIdentity(ctx context.Context, connector, userID string) (canonConnector, canonUserID string, err error)
+	// Link points the satellite identity at the hub's canonical account: the
+	// satellite's memories are merged into the hub, its soul/role rows are
+	// dropped (it adopts the hub's), and the link is recorded. It rejects
+	// self-links, already-linked satellites, and a second identity on a
+	// connector the account already uses.
+	Link(ctx context.Context, satConnector, satUserID, hubConnector, hubUserID string) error
+	// Unlink detaches the identity from its hub (no-op if not linked).
+	Unlink(ctx context.Context, connector, userID string) error
 }

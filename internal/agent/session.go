@@ -92,3 +92,36 @@ func (s *cmdSession) AllowList() ([]string, error) {
 func (s *cmdSession) ResolveApproval(approve bool, id string) {
 	s.a.resumeApproval(s.ctx, s.userKey, s.msg.ChatID, approve, id)
 }
+
+func (s *cmdSession) GenerateLinkCode() (string, error) {
+	if s.a.store == nil {
+		return "", command.ErrUnsupported
+	}
+	return s.a.generateLinkCode(s.msg.Connector, s.msg.UserID), nil
+}
+
+func (s *cmdSession) RedeemLinkCode(code string) (string, error) {
+	if s.a.store == nil {
+		return "", command.ErrUnsupported
+	}
+	return s.a.redeemLinkCode(s.ctx, code, s.msg.Connector, s.msg.UserID)
+}
+
+func (s *cmdSession) Unlink() error {
+	if s.a.store == nil {
+		return command.ErrUnsupported
+	}
+	s.a.clearUserHistory(s.userKey)
+	return s.a.store.Unlink(s.ctx, s.msg.Connector, s.msg.UserID)
+}
+
+func (s *cmdSession) LinkStatus() (bool, string) {
+	if s.a.store == nil {
+		return false, ""
+	}
+	cc, cu, err := s.a.store.ResolveIdentity(s.ctx, s.msg.Connector, s.msg.UserID)
+	if err != nil || (cc == s.msg.Connector && cu == s.msg.UserID) {
+		return false, ""
+	}
+	return true, cc + ":" + cu
+}

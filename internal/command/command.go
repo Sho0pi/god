@@ -31,6 +31,16 @@ type Runtime interface {
 	// ResolveApproval approves (true) or denies (false) a parked tool call by id.
 	// It sends its own replies and continues the agent's tool loop.
 	ResolveApproval(approve bool, id string)
+	// GenerateLinkCode mints a one-time code so another chat can link to this
+	// account (see RedeemLinkCode). Returns ErrUnsupported with no store.
+	GenerateLinkCode() (string, error)
+	// RedeemLinkCode links this identity to the account that generated code,
+	// returning a label for the now-shared account.
+	RedeemLinkCode(code string) (string, error)
+	// Unlink detaches this identity from its linked account.
+	Unlink() error
+	// LinkStatus reports whether this identity is linked, with a short detail.
+	LinkStatus() (linked bool, detail string)
 }
 
 // ErrUnsupported is returned by Runtime methods whose capability is unavailable

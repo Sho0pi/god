@@ -32,3 +32,17 @@ CREATE TABLE IF NOT EXISTS memories (
 
 -- Index added when memory grows beyond ~10k rows per user.
 -- For now exact cosine scan is fast enough.
+
+-- Cross-connector identity links. A "satellite" identity (connector,user_id)
+-- points at a canonical "hub" (canon_connector,canon_user_id); the hub has no
+-- row (it is self-canonical). Lets one person share soul/role/memory across
+-- connectors. UNIQUE keeps at most one satellite per connector per hub.
+CREATE TABLE IF NOT EXISTS identity_links (
+    connector       TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    canon_connector TEXT NOT NULL,
+    canon_user_id   TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (connector, user_id),
+    UNIQUE (canon_connector, canon_user_id, connector)
+);
