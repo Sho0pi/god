@@ -41,6 +41,10 @@ type Runtime interface {
 	Unlink() error
 	// LinkStatus reports whether this identity is linked, with a short detail.
 	LinkStatus() (linked bool, detail string)
+	// ListReminders returns this user's reminders as preformatted lines.
+	ListReminders() ([]string, error)
+	// CancelReminder cancels a reminder by id (owner-scoped); ok=false if not found.
+	CancelReminder(id int64) (ok bool, err error)
 }
 
 // ErrUnsupported is returned by Runtime methods whose capability is unavailable

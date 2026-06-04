@@ -20,6 +20,7 @@ import (
 	"github.com/sho0pi/god/internal/tools/configtool"
 	"github.com/sho0pi/god/internal/tools/fs"
 	"github.com/sho0pi/god/internal/tools/memory"
+	"github.com/sho0pi/god/internal/tools/remind"
 	toolsoul "github.com/sho0pi/god/internal/tools/soul"
 	"github.com/sho0pi/god/internal/tools/webextract"
 	"github.com/sho0pi/god/internal/tools/websearch"
@@ -118,11 +119,16 @@ func defaultModelFor(provider string) string {
 // only the web tools are wired; the legacy internal/tool/* tools are kept in the
 // tree but intentionally unregistered until they are migrated to the new Tool
 // interface. def is the default LLM, used to summarize large web_extract pages.
-func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolpkg.Registry {
+func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder, sched *agent.Scheduler) *toolpkg.Registry {
 	r := toolpkg.NewRegistry()
 
 	r.Register(websearch.New(nil))
 	slog.Info("tool: web_search enabled (requires ddg-search CLI on PATH)")
+
+	if sched != nil {
+		r.Register(remind.New(sched))
+		slog.Info("tool: remind enabled (scheduled reminders)")
+	}
 
 	if s != nil && e != nil {
 		r.Register(memory.NewRememberTool(e, s))
@@ -246,12 +252,32 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 	supply := a.loader.Supplier()
 	a.loader.Watch(nil) // keeps loader's internal cfg updated; supplier reads it
 
-	ag := agent.New(c, defaultLLM, a.buildRegistry(defaultLLM, s, e), e, s, agent.Options{
+	// Scheduler (reminders) needs a store. Built before the registry so the
+	// remind tool can capture it; wired with a runner after the agent exists.
+	var sched *agent.Scheduler
+	if s != nil {
+		var err error
+		if sched, err = agent.NewScheduler(s); err != nil {
+			slog.Error("scheduler init", "err", err)
+			sched = nil
+		}
+	}
+
+	ag := agent.New(c, defaultLLM, a.buildRegistry(defaultLLM, s, e, sched), e, s, agent.Options{
 		MaxTurns:          cfg.Memory.MaxTurns,
 		InactivityTimeout: cfg.Memory.InactivityTimeout,
 		ConfigFn:          supply,
 		LLMPool:           pool,
+		Scheduler:         sched,
 	})
+
+	if sched != nil {
+		sched.SetRunner(ag.RunInstruction)
+		if err := sched.Start(ctx); err != nil {
+			slog.Error("scheduler start", "err", err)
+		}
+	}
+
 	if err := ag.Run(ctx); err != nil {
 		slog.Error("agent stopped", "err", err)
 	}

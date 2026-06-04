@@ -10,6 +10,7 @@ import (
 	"github.com/sho0pi/god/internal/agent"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
+	"github.com/sho0pi/god/internal/store"
 	tools "github.com/sho0pi/god/internal/tools"
 )
 
@@ -116,7 +117,19 @@ func (s *mockStore) ResolveIdentity(_ context.Context, c, u string) (string, str
 }
 func (s *mockStore) Link(_ context.Context, _, _, _, _ string) error { return nil }
 func (s *mockStore) Unlink(_ context.Context, _, _ string) error     { return nil }
-func (s *mockStore) Close() error                                    { return nil }
+func (s *mockStore) SaveReminder(context.Context, store.Reminder) (int64, error) {
+	return 0, nil
+}
+func (s *mockStore) ListEnabledReminders(context.Context) ([]store.Reminder, error) {
+	return nil, nil
+}
+func (s *mockStore) ListReminders(context.Context, string, string) ([]store.Reminder, error) {
+	return nil, nil
+}
+func (s *mockStore) DeleteReminder(context.Context, string, string, int64) (bool, error) {
+	return false, nil
+}
+func (s *mockStore) Close() error { return nil }
 
 // --- mock embedder ---
 

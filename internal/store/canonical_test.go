@@ -44,11 +44,21 @@ func (r *recStore) SearchMemories(_ context.Context, c, u string, _ []float32, _
 	r.gotMemory = [2]string{c, u}
 	return nil, nil
 }
-func (r *recStore) DeleteMemories(context.Context, string, string) error { return nil }
-func (r *recStore) AddAllow(_ context.Context, c, _ string) error        { r.gotAllow = c; return nil }
-func (r *recStore) RemoveAllow(context.Context, string, string) error    { return nil }
-func (r *recStore) ListAllow(context.Context, string) ([]string, error)  { return nil, nil }
-func (r *recStore) Close() error                                         { return nil }
+func (r *recStore) DeleteMemories(context.Context, string, string) error  { return nil }
+func (r *recStore) AddAllow(_ context.Context, c, _ string) error         { r.gotAllow = c; return nil }
+func (r *recStore) RemoveAllow(context.Context, string, string) error     { return nil }
+func (r *recStore) ListAllow(context.Context, string) ([]string, error)   { return nil, nil }
+func (r *recStore) SaveReminder(context.Context, Reminder) (int64, error) { return 0, nil }
+func (r *recStore) ListEnabledReminders(context.Context) ([]Reminder, error) {
+	return nil, nil
+}
+func (r *recStore) ListReminders(context.Context, string, string) ([]Reminder, error) {
+	return nil, nil
+}
+func (r *recStore) DeleteReminder(context.Context, string, string, int64) (bool, error) {
+	return false, nil
+}
+func (r *recStore) Close() error { return nil }
 
 func TestCanonicalResolvesProfileOps(t *testing.T) {
 	inner := &recStore{resolveTo: map[string][2]string{

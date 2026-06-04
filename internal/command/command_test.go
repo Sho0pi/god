@@ -31,6 +31,8 @@ func (f *fakeRuntime) GenerateLinkCode() (string, error)       { return "ABC123"
 func (f *fakeRuntime) RedeemLinkCode(string) (string, error)   { return "whatsapp:1", nil }
 func (f *fakeRuntime) Unlink() error                           { return nil }
 func (f *fakeRuntime) LinkStatus() (bool, string)              { return false, "" }
+func (f *fakeRuntime) ListReminders() ([]string, error)        { return []string{"#1  [1m]  say hi"}, nil }
+func (f *fakeRuntime) CancelReminder(int64) (bool, error)      { return true, nil }
 
 func TestRegistry_Lookup(t *testing.T) {
 	reg := command.NewRegistry(command.Builtin())
@@ -127,6 +129,35 @@ func TestUnlinkCommand(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(replied), "unlinked") {
 		t.Errorf("expected unlink confirmation, got %q", replied)
+	}
+}
+
+func TestRemindersCommand_List(t *testing.T) {
+	reg := command.NewRegistry(command.Builtin())
+	def, ok := reg.Lookup("reminders")
+	if !ok {
+		t.Fatal("expected 'reminders' to be registered")
+	}
+	var replied string
+	req := command.Request{Text: "/reminders", Reply: func(t string) error { replied = t; return nil }}
+	if err := def.Handler(context.Background(), req, &fakeRuntime{}); err != nil {
+		t.Fatalf("reminders handler: %v", err)
+	}
+	if !strings.Contains(replied, "#1") || !strings.Contains(replied, "say hi") {
+		t.Errorf("expected reminder list, got %q", replied)
+	}
+}
+
+func TestRemindersCommand_Cancel(t *testing.T) {
+	reg := command.NewRegistry(command.Builtin())
+	def, _ := reg.Lookup("reminders")
+	var replied string
+	req := command.Request{Text: "/reminders cancel 1", Reply: func(t string) error { replied = t; return nil }}
+	if err := def.Handler(context.Background(), req, &fakeRuntime{}); err != nil {
+		t.Fatalf("cancel handler: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(replied), "cancelled") {
+		t.Errorf("expected cancel confirmation, got %q", replied)
 	}
 }
 

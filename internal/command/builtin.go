@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,44 @@ func Builtin() []Definition {
 		denyCommand(),
 		linkCommand(),
 		unlinkCommand(),
+		remindersCommand(),
+	}
+}
+
+// remindersCommand lists this user's scheduled reminders or cancels one.
+func remindersCommand() Definition {
+	return Definition{
+		Name:        "reminders",
+		Description: "List your scheduled reminders, or cancel one.",
+		Usage:       "/reminders | /reminders cancel <id>",
+		Handler: func(_ context.Context, req Request, rt Runtime) error {
+			if rt == nil {
+				return req.Reply("Reminders unavailable.")
+			}
+			fields := strings.Fields(req.Text)
+			if len(fields) >= 3 && strings.ToLower(fields[1]) == "cancel" {
+				id, err := strconv.ParseInt(fields[2], 10, 64)
+				if err != nil {
+					return req.Reply("Usage: /reminders cancel <id>")
+				}
+				ok, err := rt.CancelReminder(id)
+				if err != nil {
+					return req.Reply("Couldn't cancel: " + err.Error())
+				}
+				if !ok {
+					return req.Reply(fmt.Sprintf("No reminder #%d of yours.", id))
+				}
+				return req.Reply(fmt.Sprintf("Cancelled reminder #%d.", id))
+			}
+			lines, err := rt.ListReminders()
+			if err != nil {
+				return req.Reply("Couldn't list reminders: " + err.Error())
+			}
+			if len(lines) == 0 {
+				return req.Reply("No reminders. Ask me to remind you about something.")
+			}
+			return req.Reply("Your reminders:\n" + strings.Join(lines, "\n") + "\n\nCancel with `/reminders cancel <id>`.")
+		},
 	}
 }
 
