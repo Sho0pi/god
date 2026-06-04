@@ -35,8 +35,10 @@ func linkCommand() Definition {
 				if err != nil {
 					return req.Reply("Linking isn't available here.")
 				}
+				// Backtick the full command so it renders as tap-to-copy code
+				// (Telegram) / monospace (WhatsApp) — copy it, paste in the other chat.
 				return req.Reply(fmt.Sprintf(
-					"Your link code is %s (valid 10 minutes).\nFrom your other chat, send: /link %s", code, code))
+					"Link code (valid 10 minutes). From your other chat, send:\n`/link %s`", code))
 			}
 			label, err := rt.RedeemLinkCode(fields[1])
 			if err != nil {
