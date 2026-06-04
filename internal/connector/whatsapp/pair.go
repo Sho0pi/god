@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	_ "modernc.org/sqlite"
 )
+
+// pairConnectTimeout bounds the wait for the authenticated reconnection that
+// follows a successful QR scan.
+const pairConnectTimeout = 40 * time.Second
 
 // Pair runs a standalone WhatsApp device login against the session store at
 // storePath, outside the full connector lifecycle. It is used by the setup
@@ -68,6 +74,27 @@ func Pair(ctx context.Context, storePath string, reset bool, qrFn func(code stri
 		}
 	}
 
+	// After the QR is scanned, whatsmeow finishes pairing, then drops the socket
+	// and reconnects authenticated — only then is the session fully persisted.
+	// We must wait for events.Connected before disconnecting, otherwise pairing
+	// is left half-finished and the phone hangs on "login pending".
+	connected := make(chan struct{}, 1)
+	pairErr := make(chan error, 1)
+	client.AddEventHandler(func(evt any) {
+		switch e := evt.(type) {
+		case *events.Connected:
+			select {
+			case connected <- struct{}{}:
+			default:
+			}
+		case *events.PairError:
+			select {
+			case pairErr <- e.Error:
+			default:
+			}
+		}
+	})
+
 	qrChan, err := client.GetQRChannel(ctx)
 	if err != nil {
 		return fmt.Errorf("get qr channel: %w", err)
@@ -80,6 +107,8 @@ func Pair(ctx context.Context, storePath string, reset bool, qrFn func(code stri
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case err := <-pairErr:
+			return fmt.Errorf("pairing failed: %w", err)
 		case evt, open := <-qrChan:
 			if !open {
 				return fmt.Errorf("qr channel closed before login")
@@ -90,13 +119,30 @@ func Pair(ctx context.Context, storePath string, reset bool, qrFn func(code stri
 					qrFn(evt.Code)
 				}
 			case "success":
-				return nil
+				// QR scanned. Wait for the authenticated reconnection so the
+				// session is saved before we disconnect.
+				return waitConnected(ctx, connected, pairErr)
 			case "timeout":
 				return fmt.Errorf("QR code timed out — try again")
 			default:
 				// other progress events ("error", etc.) — keep waiting
 			}
 		}
+	}
+}
+
+// waitConnected blocks until the post-pair authenticated connection lands, the
+// pairing errors, ctx is cancelled, or the timeout elapses.
+func waitConnected(ctx context.Context, connected <-chan struct{}, pairErr <-chan error) error {
+	select {
+	case <-connected:
+		return nil
+	case err := <-pairErr:
+		return fmt.Errorf("pairing failed: %w", err)
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(pairConnectTimeout):
+		return fmt.Errorf("paired but did not finish connecting in time — try again")
 	}
 }
 
