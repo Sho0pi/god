@@ -101,6 +101,7 @@ func (a *Agent) resumeApproval(ctx context.Context, userKey, chatID string, appr
 	ctx = context.WithValue(ctx, toolpkg.UserKey{}, toolpkg.UserInfo{
 		Connector: p.connector,
 		UserID:    p.userID,
+		ChatID:    p.chatID,
 	})
 
 	var result string

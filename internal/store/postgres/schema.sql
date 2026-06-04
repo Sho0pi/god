@@ -46,3 +46,17 @@ CREATE TABLE IF NOT EXISTS identity_links (
     PRIMARY KEY (connector, user_id),
     UNIQUE (canon_connector, canon_user_id, connector)
 );
+
+-- Scheduled reminders. schedule is a Go duration ("1m") or a cron expr
+-- ("0 9 * * *"); instruction is run through the LLM and the reply sent to chat_id.
+CREATE TABLE IF NOT EXISTS reminders (
+    id          BIGSERIAL PRIMARY KEY,
+    connector   TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    chat_id     TEXT NOT NULL,
+    schedule    TEXT NOT NULL,
+    instruction TEXT NOT NULL,
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS reminders_owner_idx ON reminders (connector, user_id);

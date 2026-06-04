@@ -13,6 +13,7 @@ import (
 	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
+	"github.com/sho0pi/god/internal/store"
 	tools "github.com/sho0pi/god/internal/tools"
 )
 
@@ -107,7 +108,19 @@ func (s *stateStore) ResolveIdentity(_ context.Context, c, u string) (string, st
 }
 func (s *stateStore) Link(_ context.Context, _, _, _, _ string) error { return nil }
 func (s *stateStore) Unlink(_ context.Context, _, _ string) error     { return nil }
-func (s *stateStore) Close() error                                    { return nil }
+func (s *stateStore) SaveReminder(context.Context, store.Reminder) (int64, error) {
+	return 0, nil
+}
+func (s *stateStore) ListEnabledReminders(context.Context) ([]store.Reminder, error) {
+	return nil, nil
+}
+func (s *stateStore) ListReminders(context.Context, string, string) ([]store.Reminder, error) {
+	return nil, nil
+}
+func (s *stateStore) DeleteReminder(context.Context, string, string, int64) (bool, error) {
+	return false, nil
+}
+func (s *stateStore) Close() error { return nil }
 
 // --- helpers ---
 

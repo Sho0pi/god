@@ -8,6 +8,7 @@ import (
 	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
+	"github.com/sho0pi/god/internal/store"
 )
 
 // linkStore is a no-op store.Store; only Link is exercised by these tests.
@@ -30,9 +31,19 @@ func (linkStore) ListAllow(context.Context, string) ([]string, error)  { return 
 func (linkStore) ResolveIdentity(_ context.Context, c, u string) (string, string, error) {
 	return c, u, nil
 }
-func (linkStore) Link(context.Context, string, string, string, string) error { return nil }
-func (linkStore) Unlink(context.Context, string, string) error               { return nil }
-func (linkStore) Close() error                                               { return nil }
+func (linkStore) Link(context.Context, string, string, string, string) error  { return nil }
+func (linkStore) Unlink(context.Context, string, string) error                { return nil }
+func (linkStore) SaveReminder(context.Context, store.Reminder) (int64, error) { return 0, nil }
+func (linkStore) ListEnabledReminders(context.Context) ([]store.Reminder, error) {
+	return nil, nil
+}
+func (linkStore) ListReminders(context.Context, string, string) ([]store.Reminder, error) {
+	return nil, nil
+}
+func (linkStore) DeleteReminder(context.Context, string, string, int64) (bool, error) {
+	return false, nil
+}
+func (linkStore) Close() error { return nil }
 
 func newLinkTestAgent() *Agent {
 	return &Agent{

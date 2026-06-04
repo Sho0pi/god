@@ -202,6 +202,7 @@ Keys live in `~/.god/.env` (written by `god model`); shell env overrides it.
 | `/link` | everyone | Get a code to link this chat to your account on another app |
 | `/link <code>` | everyone | Redeem a code from your other chat (shares profile + memory) |
 | `/unlink` | everyone | Detach this chat from a linked account |
+| `/reminders` | everyone | List your scheduled reminders (cancel: `/reminders cancel <id>`) |
 | `/allow add\|remove\|list <number>` | admin | Manage the WhatsApp allow-list (store-backed) |
 | `/approve <id>` `/deny <id>` | admin | Resolve a parked tool call (approval gate) |
 | `/factory-reset` | admin | Wipe soul, role, all memories, and history |
@@ -217,6 +218,7 @@ Registered tools (gated per role). Some need a binary or config to activate.
 | `web_search` | `ddg-search` on PATH | DuckDuckGo search, no API key |
 | `web_extract` | — (on by default) | Fetch a URL → markdown, large pages LLM-summarized; SSRF-guarded |
 | `remember` | `DATABASE_URL` + embedder | Save a fact to long-term memory |
+| `remind` | `DATABASE_URL` | Schedule a recurring reminder god runs and sends back ("every minute…", "9am daily…") |
 | `set_soul` | `DATABASE_URL` | Assign a soul to the current user |
 | `config` | `tools.config.enabled` | Let god edit `god.yaml` (admin only; pair with `approval`) |
 | `read_file` `list_dir` `glob` `grep` `write_file` `edit_file` | `tools.fs.enabled` | Filesystem tools, contained to `tools.fs.root` |
@@ -255,7 +257,7 @@ session (`~/.god/whatsapp`), Telegram token (if enabled).
 ```
 internal/
   cmd/            cobra commands: gateway, cli, connector, model, doctor
-  agent/          core loop: message → soul/role → LLM → tools → reply; approval gate
+  agent/          core loop: message → soul/role → LLM → tools → reply; approval gate; scheduler (reminders)
   command/        slash commands (/reset /whoami /allow /approve /factory-reset /help)
   connector/      whatsapp, telegram, socket (cli transport), multi (fan-out)
     setup/        connector setup wizards (registry + huh)

@@ -45,6 +45,7 @@ type Options struct {
 	DefaultRoles map[string]string
 	Admins       []string
 	LLMPool      *llm.Pool
+	Scheduler    *Scheduler // optional; enables /reminders management
 }
 
 // Agent routes messages to the LLM, manages per-user history and long-term memory.
@@ -66,6 +67,7 @@ type Agent struct {
 	// types whatsapp/cli). Used as a fallback in soul/role resolution.
 	defaultSouls map[string]string
 	defaultRoles map[string]string
+	scheduler    *Scheduler
 
 	historyMu sync.Mutex
 	history   map[string][]llm.Message
@@ -135,6 +137,7 @@ func New(c connector.Connector, l llm.LLM, r *toolpkg.Registry, e embed.Embedder
 		connectorName:     opts.ConnectorName,
 		defaultSouls:      opts.DefaultSouls,
 		defaultRoles:      opts.DefaultRoles,
+		scheduler:         opts.Scheduler,
 		history:           make(map[string][]llm.Message),
 		userMu:            make(map[string]*sync.Mutex),
 		timers:            make(map[string]*time.Timer),
@@ -191,6 +194,7 @@ func (a *Agent) handleMessage(ctx context.Context, msg connector.Message) {
 	ctx = context.WithValue(ctx, toolpkg.UserKey{}, toolpkg.UserInfo{
 		Connector: msg.Connector,
 		UserID:    msg.UserID,
+		ChatID:    msg.ChatID,
 	})
 
 	soulName := a.resolveSoul(ctx, msg)
@@ -210,6 +214,40 @@ func (a *Agent) handleMessage(ctx context.Context, msg connector.Message) {
 	a.historyMu.Unlock()
 
 	a.runToolLoop(ctx, userKey, msg.Connector, msg.UserID, msg.ChatID, hist, systemPrompt, tools, msgLLM)
+}
+
+// RunInstruction executes a system-initiated turn (e.g. a fired reminder): it
+// runs instruction through the user's resolved soul/role/LLM+tools and sends the
+// reply to chatID. It mirrors handleMessage but the "user" turn is the
+// instruction. Safe to call concurrently with the user's live messages — it
+// takes the per-user lock.
+func (a *Agent) RunInstruction(ctx context.Context, connectorName, userID, chatID, instruction string) {
+	userKey := connectorName + ":" + userID
+	unlock := a.lockUser(userKey)
+	defer unlock()
+
+	msg := connector.Message{Connector: connectorName, UserID: userID, ChatID: chatID, Text: instruction}
+
+	ctx = context.WithValue(ctx, toolpkg.UserKey{}, toolpkg.UserInfo{
+		Connector: connectorName,
+		UserID:    userID,
+		ChatID:    chatID,
+	})
+
+	soulName := a.resolveSoul(ctx, msg)
+	roleName := a.resolveRole(ctx, msg)
+	roleCfg := a.getRoleConfig(roleName)
+	msgLLM := a.llmPool.Get(ctx, llm.ProviderConfig{Provider: roleCfg.LLM.Provider, Model: roleCfg.LLM.Model})
+	tools := a.registry.FilteredTools(roleCfg.Tools)
+	systemPrompt := a.buildSystemPrompt(ctx, msg, soulName)
+
+	slog.Info("agent: scheduled run", "connector", connectorName, "user", userID, "instruction", truncate(instruction, 80))
+
+	a.historyMu.Lock()
+	hist := append(a.history[userKey], llm.Message{Role: "user", Text: instruction})
+	a.historyMu.Unlock()
+
+	a.runToolLoop(ctx, userKey, connectorName, userID, chatID, hist, systemPrompt, tools, msgLLM)
 }
 
 // runToolLoop drives the LLM ↔ tool conversation until a final text answer.
@@ -483,6 +521,8 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, msg connector.Message, so
 	if soul, ok := cfg.Souls[soulName]; ok && soul.Prompt != "" {
 		base = soul.Prompt
 	}
+	// Make the agent time-aware (needed for "what day is it" and scheduling).
+	base = "Current date and time: " + time.Now().Format(time.RFC1123) + "\n\n" + base
 
 	if a.embedder == nil || a.store == nil {
 		return base

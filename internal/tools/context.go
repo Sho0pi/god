@@ -7,10 +7,12 @@ import "context"
 // right user's long-term memory).
 type UserKey struct{}
 
-// UserInfo identifies the user a tool call is acting on behalf of.
+// UserInfo identifies the user a tool call is acting on behalf of. ChatID is the
+// originating chat, used by tools that schedule a later reply (e.g. remind).
 type UserInfo struct {
 	Connector string
 	UserID    string
+	ChatID    string
 }
 
 // UserFrom extracts the UserInfo the agent placed in ctx. ok is false when no

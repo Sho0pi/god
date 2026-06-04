@@ -127,3 +127,25 @@ func (s *cmdSession) LinkStatus() (bool, string) {
 	}
 	return true, cc + ":" + cu
 }
+
+func (s *cmdSession) ListReminders() ([]string, error) {
+	if s.a.scheduler == nil {
+		return nil, command.ErrUnsupported
+	}
+	rs, err := s.a.scheduler.List(s.ctx, s.msg.Connector, s.msg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	lines := make([]string, 0, len(rs))
+	for _, r := range rs {
+		lines = append(lines, fmt.Sprintf("#%d  [%s]  %s", r.ID, r.Schedule, r.Instruction))
+	}
+	return lines, nil
+}
+
+func (s *cmdSession) CancelReminder(id int64) (bool, error) {
+	if s.a.scheduler == nil {
+		return false, command.ErrUnsupported
+	}
+	return s.a.scheduler.Cancel(s.ctx, s.msg.Connector, s.msg.UserID, id)
+}

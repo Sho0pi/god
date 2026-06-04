@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // SoulStore persists per-user soul assignments.
 type SoulStore interface {
@@ -39,8 +42,32 @@ type Store interface {
 	MemoryStore
 	AllowStore
 	IdentityStore
+	ReminderStore
 
 	Close() error
+}
+
+// Reminder is a scheduled instruction god runs and sends to a chat. Schedule is
+// a Go duration ("1m" = every minute) or a cron expression ("0 9 * * *").
+type Reminder struct {
+	ID          int64
+	Connector   string
+	UserID      string
+	ChatID      string
+	Schedule    string
+	Instruction string
+	Enabled     bool
+	CreatedAt   time.Time
+}
+
+// ReminderStore persists scheduled reminders. Keyed by raw (connector,userID,
+// chatID) — not canonical-resolved, since chatID is connector-specific.
+type ReminderStore interface {
+	SaveReminder(ctx context.Context, r Reminder) (int64, error)
+	ListEnabledReminders(ctx context.Context) ([]Reminder, error)
+	ListReminders(ctx context.Context, connector, userID string) ([]Reminder, error)
+	// DeleteReminder removes a reminder, scoped to its owner (no-op if not theirs).
+	DeleteReminder(ctx context.Context, connector, userID string, id int64) (bool, error)
 }
 
 // IdentityStore links chat identities across connectors so one person using e.g.
