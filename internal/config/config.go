@@ -53,7 +53,17 @@ type LLMConfig struct {
 
 type ConnectorsConfig struct {
 	WhatsApp WhatsAppConfig `mapstructure:"whatsapp"`
+	Telegram TelegramConfig `mapstructure:"telegram"`
 	CLI      CLIConfig      `mapstructure:"cli"`
+}
+
+type TelegramConfig struct {
+	Enabled      bool               `mapstructure:"enabled"`
+	Token        string             `mapstructure:"token"` // empty → TELEGRAM_BOT_TOKEN env
+	Allow        []string           `mapstructure:"allow"` // numeric Telegram user IDs (empty = all)
+	GroupTrigger GroupTriggerConfig `mapstructure:"group_trigger"`
+	DefaultSoul  string             `mapstructure:"default_soul"`
+	DefaultRole  string             `mapstructure:"default_role"`
 }
 
 type WhatsAppConfig struct {
@@ -125,6 +135,7 @@ func Load(path string) (*Loader, error) {
 
 	v.SetDefault("connectors.whatsapp.enabled", true)
 	// Empty means "resolve via godhome (~/.god/whatsapp)"; explicit paths are used as-is.
+	v.SetDefault("connectors.telegram.enabled", false)
 	v.SetDefault("connectors.cli.enabled", true)
 	v.SetDefault("tools.config.enabled", false)
 	v.SetDefault("tools.web_extract.enabled", true)
