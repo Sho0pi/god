@@ -355,6 +355,10 @@ func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 		if cfg.Connectors.WhatsApp.DefaultSoul != "" {
 			return cfg.Connectors.WhatsApp.DefaultSoul
 		}
+	case "telegram":
+		if cfg.Connectors.Telegram.DefaultSoul != "" {
+			return cfg.Connectors.Telegram.DefaultSoul
+		}
 	case "cli":
 		if cfg.Connectors.CLI.DefaultSoul != "" {
 			return cfg.Connectors.CLI.DefaultSoul
@@ -389,6 +393,10 @@ func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
 	case "whatsapp":
 		if cfg.Connectors.WhatsApp.DefaultRole != "" {
 			return cfg.Connectors.WhatsApp.DefaultRole
+		}
+	case "telegram":
+		if cfg.Connectors.Telegram.DefaultRole != "" {
+			return cfg.Connectors.Telegram.DefaultRole
 		}
 	case "cli":
 		if cfg.Connectors.CLI.DefaultRole != "" {

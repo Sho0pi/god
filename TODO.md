@@ -35,9 +35,15 @@ Create `llm/openai/` and `llm/anthropic/` adapters implementing `llm.LLM`.
 `/role set <name>` — admin only, persists to store.
 Add to `command/builtin.go` using `Runtime.AssignRole` callback.
 
-### 3. Telegram connector
-`connector/telegram/` implementing `connector.Connector` interface.
-Token via `TELEGRAM_BOT_TOKEN`. Wire in `cmd/telegram.go`.
+### 3. Telegram connector ✓ (basic)
+`connector/telegram/` implements `connector.Connector` via `mymmrac/telego`
+(long polling). Token via `connectors.telegram.token` or `TELEGRAM_BOT_TOKEN`,
+wired in `cmd/gateway.go`. Allow-list by numeric user ID, group mention/prefix
+trigger, 4096-char message splitting. Follow-ups tracked as GitHub issues:
+- #7 multiple bots, each its own personality
+- #8 rich formatting (MarkdownV2 / HTML)
+- #9 media support (images in/out)
+- #10 streaming / draft-message progress updates
 
 ### 4. MCP support
 `tool/mcp/` — spin up MCP servers, proxy tool calls.

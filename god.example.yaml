@@ -29,6 +29,25 @@ connectors:
       mention_only: false
       prefixes: []
 
+  telegram:
+    enabled: false
+    # Bot token from @BotFather. Leave empty to read TELEGRAM_BOT_TOKEN from env.
+    token: ""
+    default_soul: human  # soul assigned to new Telegram users
+
+    # Numeric Telegram user-ID whitelist. Leave empty to allow everyone.
+    # Find your ID by messaging @userinfobot.
+    allow: []
+    # allow:
+    #   - "123456789"
+
+    # Group chat behaviour (optional), same semantics as whatsapp:
+    # mention_only: true  → only respond when @mentioned (or on a prefix)
+    # prefixes: ["!god"]  → also respond when message starts with a prefix
+    group_trigger:
+      mention_only: true
+      prefixes: []
+
   cli:
     enabled: true
     default_soul: human

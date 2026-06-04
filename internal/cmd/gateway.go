@@ -13,6 +13,7 @@ import (
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/connector/multi"
 	"github.com/sho0pi/god/internal/connector/socket"
+	"github.com/sho0pi/god/internal/connector/telegram"
 	"github.com/sho0pi/god/internal/connector/whatsapp"
 	"github.com/sho0pi/god/internal/godhome"
 )
@@ -74,6 +75,18 @@ func buildGatewayConnectors(a *app) ([]connector.Connector, error) {
 		}
 		children = append(children, whatsapp.New(storePath, a.loader.Supplier()))
 		slog.Info("gateway: whatsapp connector", "store", storePath)
+	}
+
+	if a.cfg.Connectors.Telegram.Enabled {
+		token := a.cfg.Connectors.Telegram.Token
+		if token == "" {
+			token = os.Getenv("TELEGRAM_BOT_TOKEN")
+		}
+		if token == "" {
+			return nil, fmt.Errorf("telegram enabled but no token — set connectors.telegram.token or TELEGRAM_BOT_TOKEN")
+		}
+		children = append(children, telegram.New(token, a.loader.Supplier()))
+		slog.Info("gateway: telegram connector")
 	}
 
 	return children, nil
