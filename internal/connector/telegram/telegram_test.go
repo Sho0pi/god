@@ -160,6 +160,14 @@ func TestSendRejectsBadChatID(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsMalformedToken(t *testing.T) {
+	// telego validates token format in NewBot, so this fails fast without a
+	// network call.
+	if _, err := Validate(context.Background(), "not-a-valid-token"); err == nil {
+		t.Error("expected error for malformed token")
+	}
+}
+
 func TestTriggerText(t *testing.T) {
 	priv := func(text string) *telego.Message {
 		return &telego.Message{Text: text, Chat: telego.Chat{Type: "private"}}
