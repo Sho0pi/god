@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sho0pi/god/internal/config"
+	"github.com/sho0pi/god/internal/godhome"
 )
 
 var doctorCmd = &cobra.Command{
@@ -39,6 +40,7 @@ var doctorCmd = &cobra.Command{
 			checkDocker(),
 			checkPostgres(cfg),
 			checkWhatsAppSession(cfg),
+			checkTelegram(cfg),
 		}
 
 		allOK := true
@@ -81,7 +83,10 @@ func checkGeminiKey() check {
 	if os.Getenv("GEMINI_API_KEY") != "" {
 		return pass(name + " is set")
 	}
-	return fail(name+" is missing", "export GEMINI_API_KEY=<your-key>  (get one at aistudio.google.com)")
+	// Not strictly required if the default LLM is another provider, but
+	// embeddings / long-term memory are Gemini-only, so flag it.
+	return fail(name+" is missing (needed for memory; and as the default LLM unless you set another)",
+		"run `god model gemini`  (or export GEMINI_API_KEY=<key> from aistudio.google.com)")
 }
 
 func checkDDGSearch() check {
@@ -160,15 +165,36 @@ func checkPostgres(cfg *config.Config) check {
 func checkWhatsAppSession(cfg *config.Config) check {
 	name := "WhatsApp session"
 
-	storePath := "data/whatsapp"
-	if cfg != nil && cfg.Connectors.WhatsApp.StorePath != "" {
+	// Resolve the store path the same way the gateway does: configured path, else
+	// ~/.god/whatsapp.
+	storePath := ""
+	if cfg != nil {
 		storePath = cfg.Connectors.WhatsApp.StorePath
+	}
+	if storePath == "" {
+		p, err := godhome.Path("whatsapp")
+		if err != nil {
+			return fail(name+" — cannot resolve store path", err.Error())
+		}
+		storePath = p
 	}
 
 	entries, err := os.ReadDir(storePath)
 	if err != nil || len(entries) == 0 {
 		return fail(name+" — no session found",
-			fmt.Sprintf("run `god whatsapp` and scan the QR code (session stored in %s/)", storePath))
+			fmt.Sprintf("run `god connector whatsapp` and scan the QR code (session stored in %s/)", storePath))
 	}
 	return pass(fmt.Sprintf("%s found in %s/", name, storePath))
+}
+
+func checkTelegram(cfg *config.Config) check {
+	name := "Telegram"
+	if cfg == nil || !cfg.Connectors.Telegram.Enabled {
+		return pass(name + " disabled")
+	}
+	if cfg.Connectors.Telegram.Token == "" && os.Getenv("TELEGRAM_BOT_TOKEN") == "" {
+		return fail(name+" enabled but no token",
+			"run `god connector telegram` or set connectors.telegram.token / TELEGRAM_BOT_TOKEN")
+	}
+	return pass(name + " token configured")
 }
