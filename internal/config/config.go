@@ -3,7 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -190,14 +190,14 @@ func (l *Loader) Watch(onChange func(*Config)) {
 	l.v.OnConfigChange(func(e fsnotify.Event) {
 		var cfg Config
 		if err := l.v.Unmarshal(&cfg); err != nil {
-			log.Printf("config: reload error: %v", err)
+			slog.Error("config: reload error", "err", err)
 			return
 		}
 		l.mu.Lock()
 		l.cfg = &cfg
 		l.mu.Unlock()
 
-		log.Printf("config: reloaded %s", e.Name)
+		slog.Info("config: reloaded", "file", e.Name)
 
 		if onChange != nil {
 			onChange(&cfg)

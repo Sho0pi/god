@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -199,9 +199,7 @@ func (a *Agent) handleMessage(ctx context.Context, msg connector.Message) {
 	tools := a.registry.FilteredTools(roleCfg.Tools)
 	systemPrompt := a.buildSystemPrompt(ctx, msg, soulName)
 
-	log.Printf("agent: soul=%q role=%q llm=%s/%s user=%s:%s",
-		soulName, roleName, roleCfg.LLM.Provider, roleCfg.LLM.Model,
-		msg.Connector, msg.UserID)
+	slog.Info("agent", "soul", soulName, "role", roleName, "provider", roleCfg.LLM.Provider, "model", roleCfg.LLM.Model, "connector", msg.Connector, "user", msg.UserID)
 
 	a.historyMu.Lock()
 	hist := append(a.history[userKey], llm.Message{Role: "user", Text: msg.Text})
@@ -217,7 +215,7 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 	for round := 0; round < maxToolRounds; round++ {
 		resp, err := msgLLM.ChatWithSystem(ctx, systemPrompt, hist, tools)
 		if err != nil {
-			log.Printf("llm error: %v", err)
+			slog.Error("llm error", "err", err)
 			return
 		}
 
@@ -234,7 +232,7 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 		}
 
 		tc := resp.ToolCall
-		log.Printf("🔧 tool use: model called %q args=%v (user=%s)", tc.Name, tc.Args, userKey)
+		slog.Debug("tool use", "tool", tc.Name, "user", userKey)
 
 		// Approval gate: park sensitive tool calls and wait for /approve.
 		if a.needsApproval(tc.Name) {
@@ -251,7 +249,7 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 				llm:          msgLLM,
 				expires:      time.Now().Add(approvalTTL),
 			})
-			log.Printf("approval required: tool=%s id=%s user=%s", tc.Name, id, userKey)
+			slog.Info("approval required", "tool", tc.Name, "id", id, "user", userKey)
 			a.sendOrLog(ctx, chatID, fmt.Sprintf(
 				"⚠️ Approval required — god wants to run %q:\n%s\n\nReply /approve %s  or  /deny %s",
 				tc.Name, previewToolCall(tc), id, id))
@@ -261,11 +259,11 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 		res, err := a.registry.Dispatch(ctx, tc.Name, tc.Args)
 		result := res.Content
 		if err != nil {
-			log.Printf("🔧 tool error: %s → %v", tc.Name, err)
+			slog.Error("tool error", "tool", tc.Name, "err", err)
 			result = "error: " + err.Error()
 		}
 
-		log.Printf("🔧 tool result: %s → %s", tc.Name, truncate(result, 80))
+		slog.Debug("tool result", "tool", tc.Name, "result", truncate(result, 80))
 
 		hist = append(hist,
 			llm.Message{Role: "model", ToolCall: tc},
@@ -277,12 +275,12 @@ func (a *Agent) runToolLoop(ctx context.Context, userKey, connectorName, userID,
 		)
 	}
 
-	log.Printf("agent: reached max tool rounds (%d)", maxToolRounds)
+	slog.Warn("agent: reached max tool rounds", "max", maxToolRounds)
 }
 
 func (a *Agent) sendOrLog(ctx context.Context, chatID, text string) {
 	if err := a.connector.Send(ctx, chatID, text); err != nil {
-		log.Printf("send error: %v", err)
+		slog.Error("send error", "err", err)
 	}
 }
 
@@ -306,7 +304,7 @@ func (a *Agent) handleCommand(ctx context.Context, userKey string, msg connector
 	def, ok := a.cmdRegistry.Lookup(name)
 	if !ok {
 		if err := req.Reply("Unknown command. Type /help for available commands."); err != nil {
-			log.Printf("send error: %v", err)
+			slog.Error("send error", "err", err)
 		}
 		return
 	}
@@ -323,7 +321,7 @@ func (a *Agent) handleCommand(ctx context.Context, userKey string, msg connector
 	}
 
 	if err := def.Handler(ctx, req, rt); err != nil {
-		log.Printf("command /%s error: %v", def.Name, err)
+		slog.Error("command error", "cmd", def.Name, "err", err)
 	}
 }
 
@@ -346,7 +344,7 @@ func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 	if a.store != nil {
 		name, err := a.store.GetSoul(ctx, msg.Connector, msg.UserID)
 		if err != nil {
-			log.Printf("resolve soul: %v", err)
+			slog.Warn("resolve soul", "err", err)
 		} else if name != "" {
 			return name
 		}
@@ -375,7 +373,7 @@ func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
 	if a.store != nil {
 		name, err := a.store.GetRole(ctx, msg.Connector, msg.UserID)
 		if err != nil {
-			log.Printf("resolve role: %v", err)
+			slog.Warn("resolve role", "err", err)
 		} else if name != "" {
 			return name
 		}
@@ -442,7 +440,7 @@ func (a *Agent) extractAndSave(ctx context.Context, connectorName, userID string
 	}
 	resp, err := a.llm.ChatWithSystem(ctx, extractionSystemPrompt, hist, nil)
 	if err != nil {
-		log.Printf("memory extraction: llm error: %v", err)
+		slog.Error("memory extraction: llm error", "err", err)
 		return
 	}
 	for _, line := range strings.Split(strings.TrimSpace(resp.Text), "\n") {
@@ -452,14 +450,14 @@ func (a *Agent) extractAndSave(ctx context.Context, connectorName, userID string
 		}
 		embedding, err := a.embedder.Embed(ctx, line)
 		if err != nil {
-			log.Printf("memory extraction: embed %q: %v", line, err)
+			slog.Error("memory extraction: embed", "fact", line, "err", err)
 			continue
 		}
 		if err := a.store.SaveMemory(ctx, connectorName, userID, line, embedding); err != nil {
-			log.Printf("memory extraction: save %q: %v", line, err)
+			slog.Error("memory extraction: save", "fact", line, "err", err)
 			continue
 		}
-		log.Printf("memory extraction: saved %q for %s:%s", line, connectorName, userID)
+		slog.Debug("memory extraction: saved", "fact", line, "connector", connectorName, "user", userID)
 	}
 }
 
@@ -476,7 +474,7 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, msg connector.Message, so
 
 	embedding, err := a.embedder.Embed(ctx, msg.Text)
 	if err != nil {
-		log.Printf("embed error: %v", err)
+		slog.Error("embed error", "err", err)
 		return base
 	}
 
@@ -486,7 +484,7 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, msg connector.Message, so
 	}
 	facts, err := a.store.SearchMemories(ctx, msg.Connector, msg.UserID, embedding, topK)
 	if err != nil {
-		log.Printf("memory search error: %v", err)
+		slog.Error("memory search error", "err", err)
 		return base
 	}
 
