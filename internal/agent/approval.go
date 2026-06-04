@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -111,10 +111,10 @@ func (a *Agent) resumeApproval(ctx context.Context, userKey, chatID string, appr
 		} else {
 			result = r.Content
 		}
-		log.Printf("approval %s APPROVED: %s → %s", id, p.toolCall.Name, truncate(result, 80))
+		slog.Info("approval APPROVED", "id", id, "tool", p.toolCall.Name, "result", truncate(result, 80))
 	} else {
 		result = "The user denied this action. Do not perform it; tell them it was cancelled."
-		log.Printf("approval %s DENIED: %s", id, p.toolCall.Name)
+		slog.Info("approval DENIED", "id", id, "tool", p.toolCall.Name)
 	}
 
 	hist := append(p.hist, llm.Message{ToolResult: &llm.ToolResult{

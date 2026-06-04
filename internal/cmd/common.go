@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -42,24 +42,25 @@ func (a *app) buildStore(ctx context.Context) store.Store {
 		url = a.cfg.Database.URL
 	}
 	if url == "" {
-		log.Println("store: DATABASE_URL not set — memory disabled")
+		slog.Info("store: DATABASE_URL not set — memory disabled")
 		return nil
 	}
 	s, err := postgres.New(ctx, url)
 	if err != nil {
-		log.Fatalf("store: %v", err)
+		slog.Error("store", "err", err)
+		os.Exit(1)
 	}
-	log.Println("store: connected to postgres")
+	slog.Info("store: connected to postgres")
 	return s
 }
 
 func buildEmbedder(ctx context.Context, apiKey string) embed.Embedder {
 	e, err := embedgemini.New(ctx, apiKey)
 	if err != nil {
-		log.Printf("embedder init failed: %v", err)
+		slog.Error("embedder init failed", "err", err)
 		return nil
 	}
-	log.Println("embedder: text-embedding-004 ready")
+	slog.Info("embedder: text-embedding-004 ready")
 	return e
 }
 
@@ -83,9 +84,9 @@ func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *
 			continue
 		}
 		if l := pool.Get(ctx, llm.ProviderConfig{Provider: role.LLM.Provider, Model: role.LLM.Model}); l == nil {
-			log.Printf("llm pool: failed to init role %q LLM", name)
+			slog.Warn("llm pool: failed to init LLM", "role", name)
 		} else {
-			log.Printf("llm pool: role %q → %s/%s", name, role.LLM.Provider, role.LLM.Model)
+			slog.Info("llm pool", "role", name, "provider", role.LLM.Provider, "model", role.LLM.Model)
 		}
 	}
 	return pool
@@ -99,11 +100,11 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 	r := toolpkg.NewRegistry()
 
 	r.Register(websearch.New(nil))
-	log.Println("tool: web_search enabled (requires ddg-search CLI on PATH)")
+	slog.Info("tool: web_search enabled (requires ddg-search CLI on PATH)")
 
 	if s != nil && e != nil {
 		r.Register(memory.NewRememberTool(e, s))
-		log.Println("tool: remember enabled (long-term memory)")
+		slog.Info("tool: remember enabled (long-term memory)")
 	}
 
 	if s != nil {
@@ -114,14 +115,14 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 			}
 		}
 		r.Register(toolsoul.NewSetSoulTool(s, knownSouls))
-		log.Println("tool: set_soul enabled")
+		slog.Info("tool: set_soul enabled")
 	}
 
 	if a.cfg.Tools.Config.Enabled {
 		// a.cfgFile is always set by PersistentPreRunE to the resolved config
 		// path (~/.god/god.yaml by default); the config tool edits that file.
 		r.Register(configtool.New(a.cfgFile))
-		log.Println("tool: config enabled (god edits god.yaml — grant to admin role only; approval recommended)")
+		slog.Info("tool: config enabled (god edits god.yaml — grant to admin role only; approval recommended)")
 	}
 
 	if a.cfg.Tools.WebExtract.Enabled {
@@ -141,7 +142,7 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 			summarizer = llmSummarizer{l: def}
 		}
 		r.Register(webextract.New(cfgFn, summarizer))
-		log.Println("tool: web_extract enabled (SSRF guard on; large pages summarized via default LLM)")
+		slog.Info("tool: web_extract enabled (SSRF guard on; large pages summarized via default LLM)")
 	}
 
 	if a.cfg.Tools.FS.Enabled {
@@ -150,7 +151,7 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 			MaxReadBytes: a.cfg.Tools.FS.MaxReadBytes,
 		})
 		if err != nil {
-			log.Printf("tool: read_file disabled: %v", err)
+			slog.Error("tool: read_file disabled", "err", err)
 		} else {
 			r.Register(fs.NewReadFileTool(ws))
 			r.Register(fs.NewListDirTool(ws))
@@ -158,7 +159,7 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 			r.Register(fs.NewGrepTool(ws, nil))
 			r.Register(fs.NewWriteFileTool(ws))
 			r.Register(fs.NewEditFileTool(ws))
-			log.Printf("tool: read_file, list_dir, glob, grep, write_file, edit_file enabled (workspace root: %s — WRITES are ungated)", ws.Root())
+			slog.Info("tool: read_file, list_dir, glob, grep, write_file, edit_file enabled (WRITES are ungated)", "root", ws.Root())
 		}
 	}
 
@@ -169,7 +170,8 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 	cfg := a.cfg
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	if geminiKey == "" {
-		log.Fatal("GEMINI_API_KEY is required")
+		slog.Error("GEMINI_API_KEY is required")
+		os.Exit(1)
 	}
 
 	model := cfg.LLM.Model
@@ -182,7 +184,8 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 
 	defaultLLM, err := llmgemini.New(ctx, geminiKey, model)
 	if err != nil {
-		log.Fatalf("gemini init: %v", err)
+		slog.Error("gemini init", "err", err)
+		os.Exit(1)
 	}
 	defer func() { _ = defaultLLM.Close() }()
 
@@ -197,7 +200,7 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 				defer cancel()
 				nums, err := s.ListAllow(qctx, "whatsapp")
 				if err != nil {
-					log.Printf("allow source: %v", err)
+					slog.Warn("allow source", "err", err)
 					return nil
 				}
 				return nums
@@ -221,6 +224,6 @@ func (a *app) runAgent(ctx context.Context, c connector.Connector) {
 		LLMPool:           pool,
 	})
 	if err := ag.Run(ctx); err != nil {
-		log.Printf("agent stopped: %v", err)
+		slog.Error("agent stopped", "err", err)
 	}
 }

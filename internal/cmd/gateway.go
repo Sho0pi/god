@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -58,13 +58,13 @@ func buildGatewayConnectors(a *app) ([]connector.Connector, error) {
 			return nil, fmt.Errorf("socket path: %w", err)
 		}
 		children = append(children, socket.NewServer(sockPath))
-		log.Printf("gateway: cli control socket at %s", sockPath)
+		slog.Info("gateway: cli control socket", "path", sockPath)
 	}
 
 	if a.cfg.Connectors.WhatsApp.Enabled {
 		storePath := a.cfg.Connectors.WhatsApp.StorePath
 		children = append(children, whatsapp.New(storePath, a.loader.Supplier()))
-		log.Printf("gateway: whatsapp connector (store: %s)", storePath)
+		slog.Info("gateway: whatsapp connector", "store", storePath)
 	}
 
 	return children, nil

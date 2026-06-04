@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -59,9 +59,9 @@ type Connector struct {
 func New(storePath string, configFn func() *config.Config) *Connector {
 	norm := normalizeAllow(configFn().Connectors.WhatsApp.Allow)
 	if len(norm) == 0 {
-		log.Println("whatsapp: allow list empty — accepting all senders")
+		slog.Info("whatsapp: allow list empty — accepting all senders")
 	} else {
-		log.Printf("whatsapp: allow list: %v", norm)
+		slog.Info("whatsapp: allow list", "numbers", norm)
 	}
 	return &Connector{storePath: storePath, configFn: configFn}
 }
@@ -149,7 +149,7 @@ func (c *Connector) SetMessageHandler(handler func(ctx context.Context, msg conn
 }
 
 func (c *Connector) Start(ctx context.Context) error {
-	log.Printf("whatsapp: starting, store=%s", c.storePath)
+	slog.Info("whatsapp: starting", "store", c.storePath)
 
 	c.stopping.Store(false)
 	c.runCtx, c.runCancel = context.WithCancel(ctx)
@@ -222,14 +222,14 @@ func (c *Connector) Start(ctx context.Context) error {
 						return
 					}
 					if evt.Event == "code" {
-						log.Println("whatsapp: scan QR code with WhatsApp → Linked Devices")
+						slog.Info("whatsapp: scan QR code with WhatsApp → Linked Devices")
 						qrterminal.GenerateWithConfig(evt.Code, qrterminal.Config{
 							Level:      qrterminal.L,
 							Writer:     os.Stdout,
 							HalfBlocks: true,
 						})
 					} else {
-						log.Printf("whatsapp: login event: %s", evt.Event)
+						slog.Info("whatsapp: login event", "event", evt.Event)
 					}
 				}
 			}
@@ -245,12 +245,12 @@ func (c *Connector) Start(ctx context.Context) error {
 		}
 	}
 
-	log.Println("whatsapp: connected, waiting for messages")
+	slog.Info("whatsapp: connected, waiting for messages")
 	return nil
 }
 
 func (c *Connector) Stop(ctx context.Context) error {
-	log.Println("whatsapp: stopping")
+	slog.Info("whatsapp: stopping")
 	c.stopping.Store(true)
 
 	if c.runCancel != nil {
@@ -300,7 +300,7 @@ func (c *Connector) Send(ctx context.Context, chatID, text string) error {
 
 	// Clear the typing indicator before the reply lands.
 	if err := client.SendChatPresence(ctx, to, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
-		log.Printf("whatsapp: clear typing: %v", err)
+		slog.Warn("whatsapp: clear typing", "err", err)
 	}
 
 	_, err = client.SendMessage(ctx, to, &waE2E.Message{
@@ -321,7 +321,7 @@ func (c *Connector) eventHandler(evt any) {
 		c.mu.Unlock()
 		if client != nil {
 			if err := client.SendPresence(c.runCtx, types.PresenceAvailable); err != nil {
-				log.Printf("whatsapp: send presence: %v", err)
+				slog.Warn("whatsapp: send presence", "err", err)
 			}
 		}
 	case *events.Disconnected:
@@ -360,9 +360,9 @@ func (c *Connector) reconnectWithBackoff() {
 		if client == nil {
 			return
 		}
-		log.Printf("whatsapp: reconnecting (backoff=%s)", backoff)
+		slog.Info("whatsapp: reconnecting", "backoff", backoff)
 		if err := client.Connect(); err == nil {
-			log.Println("whatsapp: reconnected")
+			slog.Info("whatsapp: reconnected")
 			return
 		}
 		select {
@@ -385,7 +385,7 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 
 	src := evt.Info.MessageSource
 	if !c.isAllowed(senderPhone(src)) {
-		log.Printf("whatsapp: blocked %q (not in allow list)", senderPhone(src))
+		slog.Info("whatsapp: blocked (not in allow list)", "phone", senderPhone(src))
 		return
 	}
 
@@ -421,7 +421,7 @@ func (c *Connector) handleIncoming(evt *events.Message) {
 		Text:      text,
 	}
 
-	log.Printf("whatsapp: msg from %s: %q", msg.SenderID, truncate(text, 60))
+	slog.Info("whatsapp: msg", "from", msg.SenderID, "text", truncate(text, 60))
 	c.acknowledge(evt) // blue ticks + typing indicator while god thinks
 	go c.handler(c.runCtx, msg)
 }
@@ -438,10 +438,10 @@ func (c *Connector) acknowledge(evt *events.Message) {
 	}
 	info := evt.Info
 	if err := client.MarkRead(c.runCtx, []types.MessageID{info.ID}, time.Now(), info.Chat, info.Sender); err != nil {
-		log.Printf("whatsapp: mark read: %v", err)
+		slog.Warn("whatsapp: mark read", "err", err)
 	}
 	if err := client.SendChatPresence(c.runCtx, info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
-		log.Printf("whatsapp: typing presence: %v", err)
+		slog.Warn("whatsapp: typing presence", "err", err)
 	}
 }
 

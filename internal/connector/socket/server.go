@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -61,7 +61,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("socket: listen %s: %w", s.path, err)
 	}
 	s.listener = ln
-	log.Printf("socket: listening on %s", s.path)
+	slog.Info("socket: listening", "path", s.path)
 
 	go s.acceptLoop(ctx)
 	return nil
@@ -75,7 +75,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("socket: accept: %v", err)
+			slog.Error("socket: accept", "err", err)
 			return
 		}
 		go s.handleConn(ctx, conn)
@@ -101,7 +101,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	for scanner.Scan() {
 		var f clientFrame
 		if err := json.Unmarshal(scanner.Bytes(), &f); err != nil {
-			log.Printf("socket: bad frame on %s: %v", id, err)
+			slog.Warn("socket: bad frame", "id", id, "err", err)
 			continue
 		}
 		user := f.User
