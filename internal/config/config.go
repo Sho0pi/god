@@ -11,8 +11,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-const DefaultPath = "god.yaml"
-
 type Config struct {
 	LLM        LLMConfig             `mapstructure:"llm"`
 	Database   DatabaseConfig        `mapstructure:"database"`

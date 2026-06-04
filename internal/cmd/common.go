@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sho0pi/god/internal/agent"
-	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/embed"
 	embedgemini "github.com/sho0pi/god/internal/embed/gemini"
@@ -119,11 +118,9 @@ func (a *app) buildRegistry(def llm.LLM, s store.Store, e embed.Embedder) *toolp
 	}
 
 	if a.cfg.Tools.Config.Enabled {
-		path := a.cfgFile
-		if path == "" {
-			path = config.DefaultPath
-		}
-		r.Register(configtool.New(path))
+		// a.cfgFile is always set by PersistentPreRunE to the resolved config
+		// path (~/.god/god.yaml by default); the config tool edits that file.
+		r.Register(configtool.New(a.cfgFile))
 		log.Println("tool: config enabled (god edits god.yaml — grant to admin role only; approval recommended)")
 	}
 
