@@ -79,8 +79,9 @@ func TestRegistry_Help(t *testing.T) {
 	if !strings.Contains(replied, "/reset") {
 		t.Errorf("help output missing /reset, got: %q", replied)
 	}
-	if !strings.Contains(replied, "/help") {
-		t.Errorf("help output missing /help, got: %q", replied)
+	// Usages are backticked so they render as tap-to-copy code in chat.
+	if !strings.Contains(replied, "`/help`") {
+		t.Errorf("help output should backtick commands, got: %q", replied)
 	}
 }
 

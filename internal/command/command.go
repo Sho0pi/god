@@ -83,8 +83,10 @@ func NewRegistry(defs []Definition) *Registry {
 		Usage:       "/help",
 		Handler: func(_ context.Context, req Request, _ Runtime) error {
 			var sb strings.Builder
+			// Backtick the usage so it renders as monospace (and, on Telegram,
+			// tap-to-copy) in chat.
 			for _, d := range r.defs {
-				fmt.Fprintf(&sb, "%s — %s\n", d.Usage, d.Description)
+				fmt.Fprintf(&sb, "`%s` — %s\n", d.Usage, d.Description)
 			}
 			return req.Reply(strings.TrimSpace(sb.String()))
 		},

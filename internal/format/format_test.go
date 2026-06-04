@@ -26,6 +26,17 @@ func TestToWhatsApp(t *testing.T) {
 	}
 }
 
+// Commands wrapped in backticks render as monospace on WhatsApp and as
+// tap-to-copy <code> on Telegram.
+func TestCommandRendersAsCode(t *testing.T) {
+	if got := ToWhatsApp("`/help`"); got != "```/help```" {
+		t.Errorf("WhatsApp command = %q, want monospace", got)
+	}
+	if got := ToTelegramHTML("`/link ABC123`"); got != "<code>/link ABC123</code>" {
+		t.Errorf("Telegram command = %q, want <code> (tap-to-copy)", got)
+	}
+}
+
 func TestToWhatsAppCodeBlock(t *testing.T) {
 	in := "before\n```\nline1\nline2\n```\nafter"
 	want := "before\n```\nline1\nline2\n```\nafter"
