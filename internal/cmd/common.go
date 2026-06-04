@@ -11,7 +11,9 @@ import (
 	"github.com/sho0pi/god/internal/embed"
 	embedgemini "github.com/sho0pi/god/internal/embed/gemini"
 	"github.com/sho0pi/god/internal/llm"
+	llmanthropic "github.com/sho0pi/god/internal/llm/anthropic"
 	llmgemini "github.com/sho0pi/god/internal/llm/gemini"
+	llmopenai "github.com/sho0pi/god/internal/llm/openai"
 	"github.com/sho0pi/god/internal/store"
 	"github.com/sho0pi/god/internal/store/postgres"
 	toolpkg "github.com/sho0pi/god/internal/tools"
@@ -73,6 +75,10 @@ func (a *app) buildLLMPool(ctx context.Context, geminiKey string, def llm.LLM) *
 				key = geminiKey
 			}
 			return llmgemini.New(ctx, key, pcfg.Model)
+		case "openai":
+			return llmopenai.New(ctx, os.Getenv("OPENAI_API_KEY"), pcfg.Model)
+		case "anthropic", "claude":
+			return llmanthropic.New(ctx, os.Getenv("ANTHROPIC_API_KEY"), pcfg.Model)
 		default:
 			return nil, llm.ErrUnsupportedProvider(pcfg.Provider)
 		}
