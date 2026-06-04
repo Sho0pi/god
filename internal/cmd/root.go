@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sho0pi/god/internal/config"
+	"github.com/sho0pi/god/internal/godhome"
 )
 
 // app holds the per-invocation dependencies, replacing package-level globals.
@@ -36,6 +37,14 @@ var rootCmd = &cobra.Command{
 	Short: "God — a minimal extensible AI agent",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("config")
+		if path == "" {
+			// No explicit --config: default to ~/.god/god.yaml.
+			p, err := godhome.Path("god.yaml")
+			if err != nil {
+				return fmt.Errorf("config: %w", err)
+			}
+			path = p
+		}
 		loader, err := config.Load(path)
 		if err != nil {
 			return fmt.Errorf("config: %w", err)
@@ -52,5 +61,8 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().String("config", config.DefaultPath, "config file path")
+	// Default shown in --help; empty fallback lets PersistentPreRunE resolve
+	// ~/.god/god.yaml if the home dir can't be determined at init time.
+	def, _ := godhome.Path("god.yaml")
+	rootCmd.PersistentFlags().String("config", def, "config file path")
 }
