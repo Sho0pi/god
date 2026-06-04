@@ -19,6 +19,7 @@ import (
 
 	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
+	"github.com/sho0pi/god/internal/format"
 )
 
 // connectorName is the identity reported on every message. Soul/role/memory are
@@ -218,9 +219,13 @@ func (c *Connector) Send(ctx context.Context, chatID, text string) error {
 		return fmt.Errorf("telegram: invalid chat id %q: %w", chatID, err)
 	}
 	for _, chunk := range splitMessage(text, maxMessageLen) {
+		// Render Markdown → Telegram HTML. The converter only emits balanced
+		// tags, so each chunk is always valid HTML even if a construct was split
+		// across the chunk boundary.
 		_, err := c.send.SendMessage(ctx, &telego.SendMessageParams{
-			ChatID: telego.ChatID{ID: id},
-			Text:   chunk,
+			ChatID:    telego.ChatID{ID: id},
+			Text:      format.ToTelegramHTML(chunk),
+			ParseMode: telego.ModeHTML,
 		})
 		if err != nil {
 			return fmt.Errorf("telegram: send: %w", err)

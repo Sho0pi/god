@@ -8,12 +8,14 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/joho/godotenv v1.5.1
+	github.com/leonid-shevtsov/telegold v0.0.0-20221113220506-36dc899eb9ea
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mymmrac/telego v1.9.0
 	github.com/pgvector/pgvector-go v0.4.0
 	github.com/pgvector/pgvector-go/pgx v0.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	github.com/yuin/goldmark v1.8.2
 	go.mau.fi/whatsmeow v0.0.0-20260531220358-9ff5508a26c2
 	golang.org/x/net v0.55.0
 	google.golang.org/genai v1.58.0

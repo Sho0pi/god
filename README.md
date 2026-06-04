@@ -265,5 +265,6 @@ internal/
   store/postgres/ pgvector: soul/role assignments, memories, allow-list
   tools/          provider-neutral tool ecosystem (web_search, web_extract, fs, …)
   config/         god.yaml load + hot-reload (fsnotify) + comment-preserving edit
+  format/         Markdown → Telegram HTML (goldmark + telegold) / WhatsApp markup
   godhome/        ~/.god paths, .env writer, gateway lock
 ```

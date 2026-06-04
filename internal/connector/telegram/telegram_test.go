@@ -154,6 +154,26 @@ func TestSendChunking(t *testing.T) {
 	}
 }
 
+func TestSendFormatsMarkdownToHTML(t *testing.T) {
+	fs := &fakeSender{}
+	c := &Connector{configFn: cfgFn(config.TelegramConfig{}), send: fs}
+
+	if err := c.Send(context.Background(), "42", "hello **bold** and `code`"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if len(fs.calls) != 1 {
+		t.Fatalf("want 1 call, got %d", len(fs.calls))
+	}
+	call := fs.calls[0]
+	if call.ParseMode != telego.ModeHTML {
+		t.Errorf("ParseMode = %q, want HTML", call.ParseMode)
+	}
+	want := "hello <b>bold</b> and <code>code</code>"
+	if call.Text != want {
+		t.Errorf("Text = %q, want %q", call.Text, want)
+	}
+}
+
 func TestSendRejectsBadChatID(t *testing.T) {
 	c := &Connector{configFn: cfgFn(config.TelegramConfig{}), send: &fakeSender{}}
 	if err := c.Send(context.Background(), "not-a-number", "hi"); err == nil {
