@@ -124,7 +124,7 @@ func Load(path string) (*Loader, error) {
 	v := viper.New()
 
 	v.SetDefault("connectors.whatsapp.enabled", true)
-	v.SetDefault("connectors.whatsapp.store_path", "data/whatsapp")
+	// Empty means "resolve via godhome (~/.god/whatsapp)"; explicit paths are used as-is.
 	v.SetDefault("connectors.cli.enabled", true)
 	v.SetDefault("tools.config.enabled", false)
 	v.SetDefault("tools.web_extract.enabled", true)

@@ -29,6 +29,12 @@ var gatewayStartCmd = &cobra.Command{
 (WhatsApp, plus the control socket that "god cli" connects to). All front-ends
 share the same agent, LLM pool, store, and memory.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		release, err := godhome.AcquireGatewayLock()
+		if err != nil {
+			return err
+		}
+		defer release()
+
 		a := appFrom(cmd)
 
 		children, err := buildGatewayConnectors(a)
@@ -62,12 +68,24 @@ func buildGatewayConnectors(a *app) ([]connector.Connector, error) {
 	}
 
 	if a.cfg.Connectors.WhatsApp.Enabled {
-		storePath := a.cfg.Connectors.WhatsApp.StorePath
+		storePath, err := resolveWhatsAppStore(a.cfg.Connectors.WhatsApp.StorePath)
+		if err != nil {
+			return nil, fmt.Errorf("whatsapp store path: %w", err)
+		}
 		children = append(children, whatsapp.New(storePath, a.loader.Supplier()))
 		slog.Info("gateway: whatsapp connector", "store", storePath)
 	}
 
 	return children, nil
+}
+
+// resolveWhatsAppStore returns the WhatsApp session store directory.
+// If configured is non-empty it is used as-is; otherwise defaults to ~/.god/whatsapp.
+func resolveWhatsAppStore(configured string) (string, error) {
+	if configured != "" {
+		return configured, nil
+	}
+	return godhome.Path("whatsapp")
 }
 
 func init() {

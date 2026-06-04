@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // envHome is the environment variable that overrides the default home dir.
@@ -54,4 +55,37 @@ func SocketPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "god.sock"), nil
+}
+
+// AcquireGatewayLock creates and exclusively locks ~/.god/gateway.lock,
+// preventing a second gateway from starting. The lock is held for the lifetime
+// of the process and released automatically on exit or crash (no stale files).
+// Call the returned release func in a defer to clean up on graceful shutdown.
+func AcquireGatewayLock() (release func(), err error) {
+	dir, err := Ensure()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, "gateway.lock")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("gateway lock: open %s: %w", path, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		// Read the PID written by the existing owner for a helpful error.
+		if pid, e := os.ReadFile(path); e == nil && len(pid) > 0 {
+			return nil, fmt.Errorf("gateway already running (pid %s) — stop it first", pid)
+		}
+		return nil, fmt.Errorf("gateway already running — stop it first")
+	}
+	// Write our PID so the error message above is useful to the next starter.
+	_ = f.Truncate(0)
+	_, _ = fmt.Fprintf(f, "%d", os.Getpid())
+
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		_ = os.Remove(path)
+	}, nil
 }
