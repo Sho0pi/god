@@ -29,6 +29,12 @@ var gatewayStartCmd = &cobra.Command{
 (WhatsApp, plus the control socket that "god cli" connects to). All front-ends
 share the same agent, LLM pool, store, and memory.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		release, err := godhome.AcquireGatewayLock()
+		if err != nil {
+			return err
+		}
+		defer release()
+
 		a := appFrom(cmd)
 
 		children, err := buildGatewayConnectors(a)
