@@ -5,9 +5,12 @@
 package godhome
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -55,6 +58,51 @@ func SocketPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "god.sock"), nil
+}
+
+// SetEnv sets KEY=value in ~/.god/.env, replacing an existing KEY= line or
+// appending a new one, and leaves all other lines (and comments) intact. It also
+// updates the current process environment so the value is visible immediately.
+// The file is written 0600 since it holds secrets (API keys).
+func SetEnv(key, value string) error {
+	dir, err := Ensure()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, ".env")
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	line := key + "=" + value
+	var out bytes.Buffer
+	replaced := false
+	sc := bufio.NewScanner(bytes.NewReader(existing))
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		t := sc.Text()
+		// Match "KEY=" or "export KEY=", ignoring leading whitespace.
+		trimmed := strings.TrimSpace(t)
+		if strings.HasPrefix(trimmed, key+"=") || strings.HasPrefix(trimmed, "export "+key+"=") {
+			out.WriteString(line + "\n")
+			replaced = true
+			continue
+		}
+		out.WriteString(t + "\n")
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("scan %s: %w", path, err)
+	}
+	if !replaced {
+		out.WriteString(line + "\n")
+	}
+
+	if err := os.WriteFile(path, out.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return os.Setenv(key, value)
 }
 
 // AcquireGatewayLock creates and exclusively locks ~/.god/gateway.lock,
