@@ -26,6 +26,7 @@ import (
 
 	"github.com/sho0pi/god/internal/config"
 	"github.com/sho0pi/god/internal/connector"
+	"github.com/sho0pi/god/internal/format"
 )
 
 const (
@@ -304,7 +305,7 @@ func (c *Connector) Send(ctx context.Context, chatID, text string) error {
 	}
 
 	_, err = client.SendMessage(ctx, to, &waE2E.Message{
-		Conversation: proto.String(text),
+		Conversation: proto.String(format.ToWhatsApp(text)),
 	})
 	return err
 }

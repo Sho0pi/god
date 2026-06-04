@@ -307,7 +307,7 @@ func (a *Agent) handleCommand(ctx context.Context, userKey string, msg connector
 
 	def, ok := a.cmdRegistry.Lookup(name)
 	if !ok {
-		if err := req.Reply("Unknown command. Type /help for available commands."); err != nil {
+		if err := req.Reply("Unknown command. Type `/help` for available commands."); err != nil {
 			slog.Error("send error", "err", err)
 		}
 		return
