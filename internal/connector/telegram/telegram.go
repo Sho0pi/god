@@ -140,7 +140,10 @@ func (c *Connector) Start(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		for update := range updates {
-			c.handleUpdate(runCtx, update)
+			// Dispatch each update in its own goroutine so a slow agent turn for
+			// one chat doesn't block messages from others. The agent serializes
+			// per user (lockUser), so concurrent dispatch is safe.
+			go c.handleUpdate(runCtx, update)
 		}
 	}()
 

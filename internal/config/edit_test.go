@@ -97,6 +97,24 @@ func TestSetValuesWritesBackup(t *testing.T) {
 	}
 }
 
+func TestSetValuesMultipleKeys(t *testing.T) {
+	path := writeTemp(t, sampleYAML)
+	if err := SetValues(path, map[string]any{
+		"llm.provider": "openai",
+		"llm.model":    "gpt-4o-mini",
+	}); err != nil {
+		t.Fatalf("SetValues: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	cfg, err := Parse(out)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.LLM.Provider != "openai" || cfg.LLM.Model != "gpt-4o-mini" {
+		t.Errorf("llm = %+v, want openai/gpt-4o-mini", cfg.LLM)
+	}
+}
+
 func TestSetValuesMissingFile(t *testing.T) {
 	err := SetValues(filepath.Join(t.TempDir(), "absent.yaml"), map[string]any{"a.b": 1})
 	if err == nil {

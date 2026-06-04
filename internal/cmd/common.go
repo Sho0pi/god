@@ -86,13 +86,14 @@ func (a *app) llmFactory() llm.Factory {
 
 func (a *app) buildLLMPool(ctx context.Context, def llm.LLM) *llm.Pool {
 	pool := llm.NewPool(a.llmFactory(), def)
-	// Pre-warm role LLMs at startup.
+	// Pre-warm role LLMs at startup. Pool.Get falls back to the default client on
+	// failure (never nil), so detect a failed init by the fallback identity.
 	for name, role := range a.cfg.Roles {
 		if role.LLM.Provider == "" || role.LLM.Model == "" {
 			continue
 		}
-		if l := pool.Get(ctx, llm.ProviderConfig{Provider: role.LLM.Provider, Model: role.LLM.Model}); l == nil {
-			slog.Warn("llm pool: failed to init LLM", "role", name)
+		if l := pool.Get(ctx, llm.ProviderConfig{Provider: role.LLM.Provider, Model: role.LLM.Model}); l == def {
+			slog.Warn("llm pool: role LLM init failed — using default (check provider API key)", "role", name, "provider", role.LLM.Provider, "model", role.LLM.Model)
 		} else {
 			slog.Info("llm pool", "role", name, "provider", role.LLM.Provider, "model", role.LLM.Model)
 		}

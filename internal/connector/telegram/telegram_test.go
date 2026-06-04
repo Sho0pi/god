@@ -9,6 +9,7 @@ import (
 	"github.com/mymmrac/telego"
 
 	"github.com/sho0pi/god/internal/config"
+	"github.com/sho0pi/god/internal/connector"
 )
 
 // cfgFn builds a config supplier with the given Telegram settings.
@@ -158,6 +159,63 @@ func TestSendRejectsBadChatID(t *testing.T) {
 	if err := c.Send(context.Background(), "not-a-number", "hi"); err == nil {
 		t.Error("expected error for non-numeric chat id")
 	}
+}
+
+func TestHandleUpdateDispatch(t *testing.T) {
+	update := func(userID int64, chatType, text string) telego.Update {
+		return telego.Update{Message: &telego.Message{
+			Text: text,
+			From: &telego.User{ID: userID},
+			Chat: telego.Chat{ID: 99, Type: chatType},
+		}}
+	}
+
+	t.Run("allowed private message reaches handler", func(t *testing.T) {
+		c := &Connector{configFn: cfgFn(config.TelegramConfig{})}
+		var got *connector.Message
+		c.SetMessageHandler(func(_ context.Context, m connector.Message) { got = &m })
+		c.handleUpdate(context.Background(), update(123, "private", "hello"))
+		if got == nil {
+			t.Fatal("handler not called")
+		}
+		if got.UserID != "123" || got.ChatID != "99" || got.Text != "hello" || got.Connector != connectorName {
+			t.Errorf("bad message: %+v", *got)
+		}
+	})
+
+	t.Run("blocked user is dropped", func(t *testing.T) {
+		c := &Connector{configFn: cfgFn(config.TelegramConfig{Allow: []string{"999"}})}
+		called := false
+		c.SetMessageHandler(func(context.Context, connector.Message) { called = true })
+		c.handleUpdate(context.Background(), update(123, "private", "hi"))
+		if called {
+			t.Error("blocked user should not reach handler")
+		}
+	})
+
+	t.Run("non-text update is ignored", func(t *testing.T) {
+		c := &Connector{configFn: cfgFn(config.TelegramConfig{})}
+		called := false
+		c.SetMessageHandler(func(context.Context, connector.Message) { called = true })
+		c.handleUpdate(context.Background(), telego.Update{})          // no Message
+		c.handleUpdate(context.Background(), update(1, "private", "")) // empty text
+		if called {
+			t.Error("non-text updates should be ignored")
+		}
+	})
+
+	t.Run("group without mention is dropped", func(t *testing.T) {
+		c := &Connector{
+			configFn: cfgFn(config.TelegramConfig{GroupTrigger: config.GroupTriggerConfig{MentionOnly: true}}),
+			username: "godbot",
+		}
+		called := false
+		c.SetMessageHandler(func(context.Context, connector.Message) { called = true })
+		c.handleUpdate(context.Background(), update(1, "group", "no mention here"))
+		if called {
+			t.Error("un-mentioned group message should be dropped")
+		}
+	})
 }
 
 func TestValidateRejectsMalformedToken(t *testing.T) {
