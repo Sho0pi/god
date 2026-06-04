@@ -61,10 +61,12 @@ func (s *cmdSession) FactoryReset() error {
 
 func (s *cmdSession) Info() command.UserInfo {
 	return command.UserInfo{
-		Soul:     s.soulName,
-		Role:     s.roleName,
-		LLMModel: s.roleCfg.LLM.Model,
-		Provider: s.roleCfg.LLM.Provider,
+		Connector: s.msg.Connector,
+		UserID:    s.msg.UserID,
+		Soul:      s.soulName,
+		Role:      s.roleName,
+		LLMModel:  s.roleCfg.LLM.Model,
+		Provider:  s.roleCfg.LLM.Provider,
 	}
 }
 

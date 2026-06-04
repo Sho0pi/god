@@ -198,8 +198,8 @@ func whoamiCommand() Definition {
 				return req.Reply("Info unavailable.")
 			}
 			info := rt.Info()
-			msg := fmt.Sprintf("Soul: %s\nRole: %s\nLLM: %s/%s",
-				info.Soul, info.Role, info.Provider, info.LLMModel)
+			msg := fmt.Sprintf("User: %s:%s\nSoul: %s\nRole: %s\nLLM: %s/%s",
+				info.Connector, info.UserID, info.Soul, info.Role, info.Provider, info.LLMModel)
 			if linked, detail := rt.LinkStatus(); linked {
 				msg += "\nLinked to: " + detail
 			}

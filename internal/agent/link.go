@@ -9,6 +9,21 @@ import (
 // linkCodeTTL is how long a generated link code stays redeemable.
 const linkCodeTTL = 10 * time.Minute
 
+// canonicalIdentity resolves an identity to its linked hub, or returns it
+// unchanged when unlinked or no store. Used for in-process checks (admin
+// bootstrap list, connector defaults) that don't go through the store — store
+// calls already resolve via the canonical wrapper.
+func (a *Agent) canonicalIdentity(ctx context.Context, connector, userID string) (string, string) {
+	if a.store == nil {
+		return connector, userID
+	}
+	cc, cu, err := a.store.ResolveIdentity(ctx, connector, userID)
+	if err != nil {
+		return connector, userID
+	}
+	return cc, cu
+}
+
 // linkCode is a one-time code, shown on an existing (hub) chat, that another
 // chat redeems to link itself to that account.
 type linkCode struct {

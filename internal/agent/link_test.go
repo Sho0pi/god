@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sho0pi/god/internal/config"
+	"github.com/sho0pi/god/internal/connector"
 	"github.com/sho0pi/god/internal/llm"
 )
 
@@ -72,5 +74,39 @@ func TestRedeemExpiredCode(t *testing.T) {
 	a.linkCodes["OLD"] = linkCode{connector: "whatsapp", userID: "972", expires: time.Now().Add(-time.Minute)}
 	if _, err := a.redeemLinkCode(context.Background(), "OLD", "telegram", "1"); err == nil {
 		t.Error("expired code should error")
+	}
+}
+
+// mapStore resolves a fixed satellite→hub mapping; everything else is self/no-op.
+type mapStore struct {
+	linkStore
+	from, toConn, toUser string
+}
+
+func (m mapStore) ResolveIdentity(_ context.Context, c, u string) (string, string, error) {
+	if c+":"+u == m.from {
+		return m.toConn, m.toUser, nil
+	}
+	return c, u, nil
+}
+
+// A linked satellite must inherit admin from the bootstrap list, which matches
+// the canonical (hub) id — the bug where Telegram stayed "user" after linking.
+func TestResolveRoleInheritsAdminViaLink(t *testing.T) {
+	a := &Agent{
+		store: mapStore{from: "telegram:7474", toConn: "whatsapp", toUser: "972"},
+		configFn: func() *config.Config {
+			return &config.Config{Admin: []string{"972"}}
+		},
+	}
+	got := a.resolveRole(context.Background(), connector.Message{Connector: "telegram", UserID: "7474"})
+	if got != "admin" {
+		t.Errorf("linked identity role = %q, want admin (inherited from hub)", got)
+	}
+
+	// An unlinked, non-admin telegram id stays a regular user.
+	got = a.resolveRole(context.Background(), connector.Message{Connector: "telegram", UserID: "5555"})
+	if got != "user" {
+		t.Errorf("unlinked non-admin role = %q, want user", got)
 	}
 }

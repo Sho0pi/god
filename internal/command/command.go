@@ -49,10 +49,12 @@ var ErrUnsupported = errors.New("not available in this configuration")
 
 // UserInfo carries the resolved identity for the current request.
 type UserInfo struct {
-	Soul     string
-	Role     string
-	LLMModel string
-	Provider string
+	Connector string
+	UserID    string
+	Soul      string
+	Role      string
+	LLMModel  string
+	Provider  string
 }
 
 // Definition describes a slash command.

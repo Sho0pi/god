@@ -345,8 +345,9 @@ func (a *Agent) clearUserHistory(userKey string) {
 
 // resolveSoul returns: store → connector default (from live config) → defaultSoul.
 func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
+	conn, user := a.canonicalIdentity(ctx, msg.Connector, msg.UserID)
 	if a.store != nil {
-		name, err := a.store.GetSoul(ctx, msg.Connector, msg.UserID)
+		name, err := a.store.GetSoul(ctx, conn, user)
 		if err != nil {
 			slog.Warn("resolve soul", "err", err)
 		} else if name != "" {
@@ -354,7 +355,7 @@ func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 		}
 	}
 	cfg := a.liveConfig()
-	switch msg.Connector {
+	switch conn {
 	case "whatsapp":
 		if cfg.Connectors.WhatsApp.DefaultSoul != "" {
 			return cfg.Connectors.WhatsApp.DefaultSoul
@@ -369,7 +370,7 @@ func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 		}
 	}
 	if a.defaultSouls != nil {
-		if name, ok := a.defaultSouls[msg.Connector]; ok && name != "" {
+		if name, ok := a.defaultSouls[conn]; ok && name != "" {
 			return name
 		}
 	}
@@ -378,8 +379,11 @@ func (a *Agent) resolveSoul(ctx context.Context, msg connector.Message) string {
 
 // resolveRole returns: store → admin bootstrap list → connector default (from live config) → "user".
 func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
+	// Resolve to the canonical (linked) identity so a linked satellite inherits
+	// the account's role, admin status, and connector defaults.
+	conn, user := a.canonicalIdentity(ctx, msg.Connector, msg.UserID)
 	if a.store != nil {
-		name, err := a.store.GetRole(ctx, msg.Connector, msg.UserID)
+		name, err := a.store.GetRole(ctx, conn, user)
 		if err != nil {
 			slog.Warn("resolve role", "err", err)
 		} else if name != "" {
@@ -387,13 +391,13 @@ func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
 		}
 	}
 	cfg := a.liveConfig()
-	// Admin bootstrap: config admin list.
+	// Admin bootstrap: config admin list (matched against the canonical id).
 	for _, id := range cfg.Admin {
-		if id == msg.UserID {
+		if id == user {
 			return "admin"
 		}
 	}
-	switch msg.Connector {
+	switch conn {
 	case "whatsapp":
 		if cfg.Connectors.WhatsApp.DefaultRole != "" {
 			return cfg.Connectors.WhatsApp.DefaultRole
@@ -408,7 +412,7 @@ func (a *Agent) resolveRole(ctx context.Context, msg connector.Message) string {
 		}
 	}
 	if a.defaultRoles != nil {
-		if name, ok := a.defaultRoles[msg.Connector]; ok && name != "" {
+		if name, ok := a.defaultRoles[conn]; ok && name != "" {
 			return name
 		}
 	}
