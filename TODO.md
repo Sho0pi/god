@@ -21,15 +21,12 @@
 
 ## TODO (priority order)
 
-### 1. Multi-LLM providers
-Add OpenAI + Anthropic to `buildLLMPool` factory in `cmd/common.go`:
-```go
-case "openai":
-    return openai.New(ctx, os.Getenv("OPENAI_API_KEY"), pcfg.Model)
-case "anthropic":
-    return anthropic.New(ctx, os.Getenv("ANTHROPIC_API_KEY"), pcfg.Model)
-```
-Create `llm/openai/` and `llm/anthropic/` adapters implementing `llm.LLM`.
+### 1. Multi-LLM providers ✓
+`llm/openai/` + `llm/anthropic/` adapters implement `llm.LLM` (thin hand-rolled
+HTTP clients, tool calling, no SDK). Wired into `buildLLMPool` in `cmd/common.go`
+(`provider: openai` → `OPENAI_API_KEY`, `provider: anthropic`/`claude` →
+`ANTHROPIC_API_KEY`). Set per-role/soul via `llm: {provider, model}`. Tool-call
+IDs round-trip through `ToolCall.ThoughtSignature`. Tested against httptest mocks.
 
 ### 2. Role assignment command
 `/role set <name>` — admin only, persists to store.

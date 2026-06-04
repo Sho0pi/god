@@ -170,13 +170,19 @@ souls:
 # set_soul, and (when enabled) config + the fs tools (read_file, list_dir, glob,
 # grep, write_file, edit_file). Host-access tools (config, fs) only reach a role
 # via tools: [] or by naming them, so keep them on trusted roles.
+#
+# llm.provider selects the backend, with the API key from the environment:
+#   gemini    → GEMINI_API_KEY     (e.g. gemini-3.1-flash-lite)
+#   openai    → OPENAI_API_KEY     (e.g. gpt-4o, gpt-4o-mini)
+#   anthropic → ANTHROPIC_API_KEY  (e.g. claude-sonnet-4-6)
+# Omit the llm block to fall back to the global `llm.model` (Gemini) default.
 roles:
   admin:
     llm: { provider: gemini, model: gemini-3.1-flash-lite }
     tools: []  # all registered tools
   user:
-    llm: { provider: gemini, model: gemini-3.1-flash-lite }
+    llm: { provider: openai, model: gpt-4o-mini }
     tools: [web_search, web_extract, remember, set_soul]
   guest:
-    llm: { provider: gemini, model: gemini-3.1-flash-lite }
+    llm: { provider: anthropic, model: claude-sonnet-4-6 }
     tools: [web_search, web_extract]
