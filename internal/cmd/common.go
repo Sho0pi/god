@@ -53,7 +53,9 @@ func (a *app) buildStore(ctx context.Context) store.Store {
 		os.Exit(1)
 	}
 	slog.Info("store: connected to postgres")
-	return s
+	// Wrap so soul/role/memory ops resolve to a user's canonical (linked)
+	// identity — see internal/store/canonical.go and the /link command.
+	return store.Canonical(s)
 }
 
 func buildEmbedder(ctx context.Context, apiKey string) embed.Embedder {
