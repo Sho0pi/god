@@ -38,12 +38,15 @@ func TestToTelegramHTML(t *testing.T) {
 	cases := []struct{ name, in, want string }{
 		{"bold", "**hi**", "<b>hi</b>"},
 		{"italic", "*hi*", "<i>hi</i>"},
-		{"strike", "~~hi~~", "<del>hi</del>"},
+		{"strike", "~~hi~~", "<s>hi</s>"},
 		{"inline code", "`x<y`", "<code>x&lt;y</code>"},
 		{"link", "[docs](https://x.io)", `<a href="https://x.io">docs</a>`},
+		{"link escapes href", `[x](https://x.io?a="b")`, `<a href="https://x.io?a=&quot;b&quot;">x</a>`},
 		{"heading", "## Title", "<b>Title</b>"},
+		{"bullet", "- item", "• item"},
 		{"escapes plain html", "a < b & c", "a &lt; b &amp; c"},
 		{"bold with special", "**a<b**", "<b>a&lt;b</b>"},
+		{"thematic break dropped (no invalid tag)", "a\n\n---\n\nb", "a\n\nb"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

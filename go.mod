@@ -8,7 +8,6 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/joho/godotenv v1.5.1
-	github.com/leonid-shevtsov/telegold v0.0.0-20221113220506-36dc899eb9ea
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/mymmrac/telego v1.9.0
 	github.com/pgvector/pgvector-go v0.4.0
